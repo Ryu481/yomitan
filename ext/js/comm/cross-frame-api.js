@@ -384,6 +384,25 @@ export class CrossFrameAPI {
         const commPort = await this._getOrCreateCommPort(targetTabId, targetFrameId);
         return await commPort.invoke(action, params, this._ackTimeout, this._responseTimeout);
     }
+    
+    invokeLocal(action, params) {
+        return new Promise((resolve, reject) => {
+            invokeApiMapHandler(
+                this._apiMap,
+                action,
+                params,
+                [],
+                (response) => {
+                    if (typeof response.error !== 'undefined') {
+                        reject(ExtensionError.deserialize(response.error));
+                    } else {
+                        resolve(response.result);
+                    }
+                },
+                () => reject(new Error(`Unknown action: ${action}`))
+            );
+        });
+    }
 
     /**
      * @param {import('cross-frame-api').ApiMapInit} handlers

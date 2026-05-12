@@ -70,32 +70,48 @@ export class FrameEndpoint {
         if (this._token !== null) { return; } // Already initialized
 
         const {data} = event;
+
         if (typeof data !== 'object' || data === null) {
-            log.error('Invalid message');
             return;
         }
 
-        const {action} = /** @type {import('core').SerializableObject} */ (data);
+        // Ignore Safari-specific postMessage protocols handled elsewhere.
+        if (
+            data.yomitanSafariCrossFrameRpc === true ||
+            data.yomitanSafariPopupRpc === true
+        ) {
+            return;
+        }
+
+        const {action, params} = /** @type {import('core').SerializableObject} */ (data);
+
+        // FrameEndpoint only cares about its connect handshake. Other messages
+        // can legitimately be observed on window.message and should be ignored.
         if (action !== 'frameEndpointConnect') {
-            log.error('Invalid action');
+            // Optional temporary debug:
+            // console.debug('[FrameEndpoint] ignored non-connect message', {
+            //     origin: event.origin,
+            //     action,
+            //     keys: Object.keys(data),
+            //     url: location.href,
+            // });
             return;
         }
 
-        const {params} = /** @type {import('core').SerializableObject} */ (data);
         if (typeof params !== 'object' || params === null) {
-            log.error('Invalid data');
+            log.error('Invalid frameEndpointConnect data');
             return;
         }
 
         const {secret} = /** @type {import('core').SerializableObject} */ (params);
         if (secret !== this._secret) {
-            log.error('Invalid authentication');
+            log.error('Invalid frameEndpointConnect authentication');
             return;
         }
 
         const {token, hostFrameId} = /** @type {import('core').SerializableObject} */ (params);
         if (typeof token !== 'string' || typeof hostFrameId !== 'number') {
-            log.error('Invalid target');
+            log.error('Invalid frameEndpointConnect target');
             return;
         }
 

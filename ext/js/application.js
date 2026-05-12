@@ -25,6 +25,23 @@ import {log} from './core/log.js';
 import {deferPromise} from './core/utilities.js';
 import {WebExtension} from './extension/web-extension.js';
 
+function isSafariPopupIframeContext() {
+    try {
+        return (
+            window.parent !== window &&
+            location.pathname.endsWith('/popup.html') &&
+            /^safari-web-extension:\/\//i.test(location.href)
+        );
+    } catch {
+        return false;
+    }
+}
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
 /**
  * @returns {boolean}
  */
@@ -216,7 +233,20 @@ export class Application extends EventDispatcher {
         mediaDrawingWorker?.postMessage({action: 'connectToDatabaseWorker'}, [mediaDrawingWorkerToBackendChannel.port2]);
 
         const api = new API(webExtension, mediaDrawingWorker, backendPort);
-        await waitForBackendReady(webExtension);
+        if (isSafariPopupIframeContext()) {
+            console.warn('[Application.main] Safari popup iframe: using non-blocking backend ready wait');
+            try {
+                await Promise.race([
+                    waitForBackendReady(webExtension),
+                    delay(1500)
+                ]);
+            } catch (e) {
+                console.warn('[Application.main] Safari popup iframe: backend ready wait failed/ignored', e);
+            }
+        } else {
+            await waitForBackendReady(webExtension);
+        }
+
         if (mediaDrawingWorker !== null) {
             api.connectToDatabaseWorker(mediaDrawingWorkerToBackendChannel.port1);
         }

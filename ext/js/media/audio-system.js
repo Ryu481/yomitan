@@ -125,11 +125,13 @@ export class AudioSystem extends EventDispatcher {
             case 'jpod101':
             {
                 const duration = audio.duration;
+
                 return (
-                    duration !== 5.694694 && // Invalid audio (Chrome)
-                    duration !== 5.651111 // Invalid audio (Firefox)
+                    Math.abs(duration - 5.694694) > 0.01 &&
+                    Math.abs(duration - 5.651111) > 0.01
                 );
             }
+
             default:
                 return true;
         }

@@ -18,6 +18,14 @@
 
 import {EventDispatcher} from '../core/event-dispatcher.js';
 
+function isSafariWebExtension() {
+    try {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+    } catch {
+        return false;
+    }
+}
+
 /**
  * This class represents a popup that is hosted in a new native window.
  * @augments EventDispatcher<import('popup').Events>
@@ -182,6 +190,24 @@ export class PopupWindow extends EventDispatcher {
      */
     async showContent(_details, displayDetails) {
         if (displayDetails === null) { return; }
+
+        if (isSafariWebExtension()) {
+            const query = displayDetails.params?.query;
+            if (typeof query === 'string' && query.length > 0) {
+                const {tabId} = await this._application.api.getOrCreateSearchPopup({
+                    focus: 'ifCreated',
+                    text: query,
+                });
+                this._popupTabId = tabId;
+            } else {
+                const {tabId} = await this._application.api.getOrCreateSearchPopup({
+                    focus: 'ifCreated',
+                });
+                this._popupTabId = tabId;
+            }
+            return;
+        }
+
         await this._invoke(true, 'displaySetContent', {details: displayDetails});
     }
 

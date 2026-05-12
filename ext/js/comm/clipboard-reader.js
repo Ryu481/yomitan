@@ -76,6 +76,14 @@ export class ClipboardReader {
               being an extension with clipboard permissions. It effectively asks for the
               non-extension permission for clipboard access.
         */
+        
+        if (this._isSafariWebExtension()) {
+            const text = await this._getSafariNativeClipboardText();
+            if (typeof text === 'string') {
+                return text;
+            }
+        }
+        
         if (this._isFirefox() && !useRichText) {
             try {
                 return await navigator.clipboard.readText();
@@ -164,6 +172,73 @@ export class ClipboardReader {
      */
     _isFirefox() {
         return (this._browser === 'firefox' || this._browser === 'firefox-mobile');
+    }
+    
+
+    /**
+    * @returns {boolean}
+    */
+    _isSafariWebExtension() {
+        try {
+            return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async _getSafariNativeClipboardText() {
+        const response = await this._sendSafariNativeMessageSafely({action: 'getClipboard'});
+        if (
+            response !== null &&
+            response.ok === true &&
+            typeof response.text === 'string'
+        ) {
+            return response.text;
+        }
+
+        return null;
+    }
+
+    _sendSafariNativeMessageSafely(message) {
+        return new Promise((resolve) => {
+            try {
+                chrome.runtime.sendNativeMessage(
+                    'ryu67.yomitan.safari.extension',
+                    message,
+                    (response) => {
+                        const e = chrome.runtime.lastError;
+                        if (e) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(typeof response === 'object' && response !== null ? response : null);
+                    },
+                );
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    /**
+    * @param {{action: string}} message
+    * @returns {Promise<?{ok?: boolean, text?: string, version?: number, error?: string, message?: string}>}
+    */
+    _sendMessageSafely(message) {
+        return new Promise((resolve) => {
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    const e = chrome.runtime.lastError;
+                    if (e) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve(typeof response === 'object' && response !== null ? response : null);
+                });
+            } catch (e) {
+                resolve(null);
+            }
+        });
     }
 
     /**

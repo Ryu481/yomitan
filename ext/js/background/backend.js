@@ -1540,6 +1540,13 @@ export class Backend {
     }
 
     /**
+     * @returns {boolean}
+     */
+    _isSafariWebExtension() {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+    }
+
+    /**
      * @param {import('settings').ProfileOptions} options
      */
     _setupContextMenu(options) {
@@ -1552,9 +1559,13 @@ export class Backend {
                     title: 'Lookup in Yomitan',
                     contexts: ['selection'],
                 }, () => this._checkLastError(chrome.runtime.lastError));
-                chrome.contextMenus.onClicked.addListener((info) => {
-                    if (info.selectionText) {
-                        this._sendMessageAllTabsIgnoreResponse({action: 'frontendScanSelectedText'});
+                chrome.contextMenus.onClicked.addListener((info, tab) => {
+                    const selectionText = typeof info.selectionText === 'string' ? info.selectionText : '';
+                    if (selectionText.length === 0) { return; }
+                    if (typeof tab?.id === 'number') {
+                        this._sendMessageTabIgnoreResponse(tab.id, {action: 'frontendScanSelectedText', params: {text: selectionText}}, {});
+                    } else {
+                        this._sendMessageAllTabsIgnoreResponse({action: 'frontendScanSelectedText', params: {text: selectionText}});
                     }
                 });
             } else {
@@ -2859,26 +2870,23 @@ export class Backend {
     async _openSettingsPage(mode) {
         const manifest = chrome.runtime.getManifest();
         const optionsUI = manifest.options_ui;
-        if (typeof optionsUI === 'undefined') { throw new Error('Failed to find options_ui'); }
-        const {page} = optionsUI;
-        if (typeof page === 'undefined') { throw new Error('Failed to find options_ui.page'); }
-        const url = chrome.runtime.getURL(page);
-        switch (mode) {
-            case 'existingOrNewTab':
-                await /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
-                    chrome.runtime.openOptionsPage(() => {
-                        const e = chrome.runtime.lastError;
-                        if (e) {
-                            reject(new Error(e.message));
-                        } else {
-                            resolve();
-                        }
-                    });
-                }));
-                break;
-            case 'newTab':
-                await this._createTab(url);
-                break;
+        if (!optionsUI || !optionsUI.page) {
+            throw new Error('Failed to find options_ui.page in manifest');
+        }
+        
+        const url = chrome.runtime.getURL(optionsUI.page);
+
+        if (mode === 'existingOrNewTab') {
+            const tabs = await chrome.tabs.query({ url: url });
+
+            if (tabs.length > 0) {
+                await chrome.tabs.update(tabs[0].id, { active: true });
+                await chrome.windows.update(tabs[0].windowId, { focused: true });
+            } else {
+                await chrome.runtime.openOptionsPage();
+            }
+        } else if (mode === 'newTab') {
+            await this._createTab(url);
         }
     }
 
