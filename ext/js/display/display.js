@@ -42,6 +42,7 @@ import {DisplayNotification} from './display-notification.js';
 import {ElementOverflowController} from './element-overflow-controller.js';
 import {OptionToggleHotkeyHandler} from './option-toggle-hotkey-handler.js';
 import {QueryParser} from './query-parser.js';
+import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
 
 /**
  * @augments EventDispatcher<import('display').Events>
@@ -235,6 +236,20 @@ export class Display extends EventDispatcher {
     get application() {
         return this._application;
     }
+    
+    
+    async invokeParentFrame(action, params) {
+        if (isSafariPopupIframeContext()) {
+            return await invokeSafariParentFrame(action, params);
+        }
+
+        const {frameId} = this._application;
+        if (frameId === null || this._parentFrameId === null || this._parentFrameId === frameId) {
+            throw new Error('Invalid parent frame');
+        }
+
+        return await this._application.crossFrame.invoke(this._parentFrameId, action, params);
+    }
 
     /** @type {DisplayGenerator} */
     get displayGenerator() {
@@ -332,7 +347,11 @@ export class Display extends EventDispatcher {
         this._dictionaryInfo = await this._application.api.getDictionaryInfo();
 
         // Prepare
-        await this._hotkeyHelpController.prepare(this._application.api);
+        if (isSafariPopupIframeContext()) {
+            console.warn('[Display.prepare] Safari popup iframe: skipping hotkeyHelpController.prepare');
+        } else {
+            await this._hotkeyHelpController.prepare(this._application.api);
+        }
         await this._displayGenerator.prepare();
         this._queryParser.prepare();
         this._history.prepare();
@@ -348,6 +367,9 @@ export class Display extends EventDispatcher {
             ['displayPopupMessage2', this._onDisplayPopupMessage2.bind(this)],
         ]);
         window.addEventListener('message', this._onWindowMessage.bind(this), false);
+        
+        document.addEventListener('visibilitychange', this._onVisibilityChange.bind(this), false);
+        window.addEventListener('pageshow', this._onPageShow.bind(this), false);
 
         if (this._pageType === 'popup' && documentElement !== null) {
             documentElement.addEventListener('mouseup', this._onDocumentElementMouseUp.bind(this), false);
@@ -387,6 +409,32 @@ export class Display extends EventDispatcher {
         if (this._frameEndpoint !== null) {
             this._frameEndpoint.signal();
         }
+    }
+    
+    _onVisibilityChange() {
+        if (document.visibilityState === 'visible') {
+            this._forceSafariContentScrollReflow();
+        }
+    }
+
+    _onPageShow() {
+        this._forceSafariContentScrollReflow();
+    }
+    
+    _forceSafariContentScrollReflow() {
+        if (!chrome.runtime.getURL('/').startsWith('safari-web-extension://')) { return; }
+
+        const el = document.getElementById('content-scroll');
+        if (el === null) { return; }
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                const originalDisplay = el.style.display;
+                el.style.display = 'none';
+                void el.offsetHeight;
+                el.style.display = originalDisplay;
+            });
+        });
     }
 
     /**
@@ -645,27 +693,18 @@ export class Display extends EventDispatcher {
      * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
      */
     async invokeContentOrigin(action, params) {
+        if (isSafariPopupIframeContext()) {
+            return await invokeSafariParentFrame(action, params);
+        }
+
         if (this._contentOriginTabId === this._application.tabId && this._contentOriginFrameId === this._application.frameId) {
             throw new Error('Content origin is same page');
         }
         if (this._contentOriginTabId === null || this._contentOriginFrameId === null) {
             throw new Error('No content origin is assigned');
         }
-        return await this._application.crossFrame.invokeTab(this._contentOriginTabId, this._contentOriginFrameId, action, params);
-    }
 
-    /**
-     * @template {import('cross-frame-api').ApiNames} TName
-     * @param {TName} action
-     * @param {import('cross-frame-api').ApiParams<TName>} params
-     * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
-     */
-    async invokeParentFrame(action, params) {
-        const {frameId} = this._application;
-        if (frameId === null || this._parentFrameId === null || this._parentFrameId === frameId) {
-            throw new Error('Invalid parent frame');
-        }
-        return await this._application.crossFrame.invoke(this._parentFrameId, action, params);
+        return await this._application.crossFrame.invokeTab(this._contentOriginTabId, this._contentOriginFrameId, action, params);
     }
 
     /**
@@ -731,10 +770,16 @@ export class Display extends EventDispatcher {
      * @param {MessageEvent<import('display').WindowApiFrameClientMessageAny>} details
      */
     _onWindowMessage({data}) {
-        /** @type {import('display').WindowApiMessageAny} */
         let data2;
         try {
-            data2 = this._authenticateMessageData(data);
+            if (
+                isSafariPopupIframeContext() &&
+                data?.yomitanSafariPopupFrameClientMessage === true
+            ) {
+                data2 = data.data;
+            } else {
+                data2 = this._authenticateMessageData(data);
+            }
         } catch (e) {
             return;
         }
@@ -1254,24 +1299,31 @@ export class Display extends EventDispatcher {
      * @param {import('settings').ProfileOptions} options
      */
     _updateDocumentOptions(options) {
-        const data = document.documentElement.dataset;
-        data.ankiEnabled = `${options.anki.enable}`;
-        data.language = options.general.language;
-        data.resultOutputMode = `${options.general.resultOutputMode}`;
-        data.glossaryLayoutMode = `${options.general.glossaryLayoutMode}`;
-        data.compactTags = `${options.general.compactTags}`;
-        data.averageFrequency = `${options.general.averageFrequency}`;
-        data.frequencyDisplayMode = `${options.general.frequencyDisplayMode}`;
-        data.termDisplayMode = `${options.general.termDisplayMode}`;
-        data.enableSearchTags = `${options.scanning.enableSearchTags}`;
-        data.showPronunciationText = `${options.general.showPitchAccentDownstepNotation}`;
-        data.showPronunciationDownstepPosition = `${options.general.showPitchAccentPositionNotation}`;
-        data.showPronunciationGraph = `${options.general.showPitchAccentGraph}`;
-        data.debug = `${options.general.debugInfo}`;
-        data.popupDisplayMode = `${options.general.popupDisplayMode}`;
-        data.popupCurrentIndicatorMode = `${options.general.popupCurrentIndicatorMode}`;
-        data.popupActionBarVisibility = `${options.general.popupActionBarVisibility}`;
-        data.popupActionBarLocation = `${options.general.popupActionBarLocation}`;
+            const data = document.documentElement.dataset;
+            data.ankiEnabled = `${options.anki.enable}`;
+            data.language = options.general.language;
+            data.resultOutputMode = `${options.general.resultOutputMode}`;
+            data.glossaryLayoutMode = `${options.general.glossaryLayoutMode}`;
+            data.compactTags = `${options.general.compactTags}`;
+            data.averageFrequency = `${options.general.averageFrequency}`;
+            data.frequencyDisplayMode = `${options.general.frequencyDisplayMode}`;
+            data.termDisplayMode = `${options.general.termDisplayMode}`;
+            data.enableSearchTags = `${options.scanning.enableSearchTags}`;
+            data.showPronunciationText = `${options.general.showPitchAccentDownstepNotation}`;
+            data.showPronunciationDownstepPosition = `${options.general.showPitchAccentPositionNotation}`;
+            data.showPronunciationGraph = `${options.general.showPitchAccentGraph}`;
+            data.debug = `${options.general.debugInfo}`;
+            data.popupDisplayMode = `${options.general.popupDisplayMode}`;
+            data.popupCurrentIndicatorMode = `${options.general.popupCurrentIndicatorMode}`;
+            data.popupActionBarVisibility = `${options.general.popupActionBarVisibility}`;
+            data.popupActionBarLocation = `${options.general.popupActionBarLocation}`;
+        }
+
+    /**
+     * @returns {boolean}
+     */
+    _isSafariWebExtension() {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
     }
 
     /**
@@ -1526,6 +1578,7 @@ export class Display extends EventDispatcher {
         }
 
         this._triggerContentUpdateComplete();
+        this._forceSafariContentScrollReflow();
         safePerformance.mark('display:contentUpdate:end');
         safePerformance.measure('display:contentUpdate', 'display:contentUpdate:start', 'display:contentUpdate:end');
     }

@@ -25,6 +25,105 @@ import {DisplayProfileSelection} from './display-profile-selection.js';
 import {DisplayResizer} from './display-resizer.js';
 import {Display} from './display.js';
 
+const safariPopupDisplayReady = (() => {
+    let resolve;
+    const promise = new Promise((resolve2) => {
+        resolve = resolve2;
+    });
+    return {promise, resolve};
+})();
+
+function isSafariPopupIframeContext() {
+    try {
+        return window.parent !== window && location.pathname.endsWith('/popup.html');
+    } catch {
+        return false;
+    }
+}
+
+function setupSafariPopupRpcEarly() {
+    if (!isSafariPopupIframeContext()) { return; }
+
+    console.log('[SafariPopupIframe] RPC early enabled', {
+        href: location.href,
+        origin: location.origin
+    });
+
+    window.addEventListener('message', async (event) => {
+        const message = event.data;
+
+        if (message?.yomitanSafariPopupRpc !== true || message?.type !== 'invoke') {
+            return;
+        }
+
+        try {
+
+            const display = await safariPopupDisplayReady.promise;
+
+            let result;
+
+            if (message.apiAction === 'displayPopupMessage1') {
+                const messageInner = message.params.data;
+                result = await display._onDisplayPopupMessage2(messageInner);
+            } else if (message.apiAction === 'displayPopupMessage2') {
+                result = await display._onDisplayPopupMessage2(message.params);
+            } else {
+                throw new Error(`Unsupported Safari popup RPC action: ${message.apiAction}`);
+            }
+
+            event.source.postMessage({
+                yomitanSafariPopupRpc: true,
+                type: 'result',
+                clientId: message.clientId,
+                id: message.id,
+                result
+            }, '*');
+        } catch (e) {
+            console.error('[SafariPopupIframe] invoke failed', e);
+
+            event.source.postMessage({
+                yomitanSafariPopupRpc: true,
+                type: 'result',
+                clientId: message.clientId,
+                id: message.id,
+                error: `${e?.message ?? e}`
+            }, '*');
+        }
+    });
+
+    window.parent.postMessage({
+        yomitanSafariPopupRpc: true,
+        type: 'ready'
+    }, '*');
+
+    console.log('[SafariPopupIframe] early ready sent');
+}
+
+setupSafariPopupRpcEarly();
+
+console.log('[SafariPopupIframe] script loaded', {
+    href: location.href,
+    origin: location.origin,
+    parentExists: window.parent !== window,
+    topIsSelf: window.top === window
+});
+
+window.addEventListener('error', (event) => {
+    console.error('[SafariPopupIframe] window error', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error
+    });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('[SafariPopupIframe] unhandled rejection', event.reason);
+});
+
+console.log('[SafariPopupIframe] before Application.main');
+
 await Application.main(true, async (application) => {
     const documentFocusController = new DocumentFocusController();
     documentFocusController.prepare();
@@ -34,6 +133,9 @@ await Application.main(true, async (application) => {
 
     const display = new Display(application, 'popup', documentFocusController, hotkeyHandler);
     await display.prepare();
+
+
+    safariPopupDisplayReady.resolve(display);
 
     const displayAudio = new DisplayAudio(display);
     displayAudio.prepare();

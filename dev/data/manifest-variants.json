@@ -333,14 +333,9 @@
         },
         {
             "name": "safari",
+            "inherit": "firefox",
+            "fileName": "yomitan-safari-web-extension",
             "modifications": [
-                {
-                    "action": "set",
-                    "path": [
-                        "author"
-                    ],
-                    "value": "Yomidevs"
-                },
                 {
                     "action": "remove",
                     "path": [
@@ -351,9 +346,18 @@
                 {
                     "action": "remove",
                     "path": [
+                        "optional_permissions"
+                    ],
+                    "item": "nativeMessaging"
+                },
+                {
+                    "action": "add",
+                    "path": [
                         "permissions"
                     ],
-                    "item": "offscreen"
+                    "items": [
+                        "nativeMessaging"
+                    ]
                 },
                 {
                     "action": "delete",
@@ -366,22 +370,20 @@
                 {
                     "action": "delete",
                     "path": [
-                        "sandbox"
+                        "browser_specific_settings"
                     ]
                 },
                 {
                     "action": "set",
                     "path": [
-                        "content_security_policy"
+                        "content_security_policy",
+                        "extension_pages"
                     ],
                     "value": "default-src 'self'; script-src 'self' 'unsafe-eval'; img-src blob: 'self'; style-src 'self' 'unsafe-inline'; media-src *; connect-src *"
                 }
             ],
             "excludeFiles": [
-                "sw.js",
-                "offscreen.html",
-                "js/background/offscreen.js",
-                "js/background/offscreen-main.js"
+                "sw.js"
             ]
         },
         {

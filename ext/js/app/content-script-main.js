@@ -21,6 +21,72 @@ import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {Frontend} from './frontend.js';
 import {PopupFactory} from './popup-factory.js';
 
+function prepareSafariCrossFrameRpcResponder(application, popupFactory) {
+    window.addEventListener('message', async (event) => {
+        const data = event.data;
+        if (data?.yomitanSafariCrossFrameRpc !== true || data?.type !== 'invoke') { return; }
+        
+        let result;
+        let error = null;
+        
+        try {
+            result = await invokeSafariCrossFrameAction(application, popupFactory, data.action, data.params);
+        } catch (e) {
+            error = `${e?.message ?? e}`;
+        }
+        
+        if (event.source === null) { return; }
+        
+        event.source.postMessage({
+            yomitanSafariCrossFrameRpc: true,
+            type: 'result',
+            clientId: data.clientId,
+            id: data.id,
+            result,
+            error,
+        }, event.origin);
+    });
+}
+
+async function invokeSafariCrossFrameAction(application, popupFactory, action, params) {
+    switch (action) {
+        case 'popupFactoryGetOrCreatePopup':
+            return await popupFactory._onApiGetOrCreatePopup(params);
+        case 'popupFactorySetOptionsContext':
+            return await popupFactory._onApiSetOptionsContext(params);
+        case 'popupFactoryHide':
+            return await popupFactory._onApiHide(params);
+        case 'popupFactoryIsVisible':
+            return await popupFactory._onApiIsVisibleAsync(params);
+        case 'popupFactorySetVisibleOverride':
+            return await popupFactory._onApiSetVisibleOverride(params);
+        case 'popupFactoryClearVisibleOverride':
+            return await popupFactory._onApiClearVisibleOverride(params);
+        case 'popupFactoryContainsPoint':
+            return await popupFactory._onApiContainsPoint(params);
+        case 'popupFactoryShowContent':
+            return await popupFactory._onApiShowContent(params);
+        case 'popupFactorySetCustomCss':
+            return await popupFactory._onApiSetCustomCss(params);
+        case 'popupFactoryClearAutoPlayTimer':
+            return await popupFactory._onApiClearAutoPlayTimer(params);
+        case 'popupFactorySetContentScale':
+            return await popupFactory._onApiSetContentScale(params);
+        case 'popupFactoryUpdateTheme':
+            return await popupFactory._onApiUpdateTheme(params);
+        case 'popupFactorySetCustomOuterCss':
+            return await popupFactory._onApiSetCustomOuterCss(params);
+        case 'popupFactoryGetFrameSize':
+            return await popupFactory._onApiGetFrameSize(params);
+        case 'popupFactorySetFrameSize':
+            return await popupFactory._onApiSetFrameSize(params);
+        case 'popupFactoryIsPointerOver':
+            return await popupFactory._onApiIsPointerOver(params);
+        default:
+            return await application.crossFrame.invokeLocal(action, params);
+    }
+}
+
 await Application.main(false, async (application) => {
     const hotkeyHandler = new HotkeyHandler();
     hotkeyHandler.prepare(application.crossFrame);
@@ -28,7 +94,7 @@ await Application.main(false, async (application) => {
     const popupFactory = new PopupFactory(application);
     popupFactory.prepare();
 
-    const {browser} = await application.api.getEnvironmentInfo();
+    prepareSafariCrossFrameRpcResponder(application, popupFactory);
 
     const frontend = new Frontend({
         application,
@@ -42,7 +108,7 @@ await Application.main(false, async (application) => {
         allowRootFramePopupProxy: true,
         childrenSupported: true,
         hotkeyHandler,
-        browser: browser,
     });
+
     await frontend.prepare();
 });

@@ -22,11 +22,111 @@ import {log} from '../core/log.js';
 import {promiseAnimationFrame} from '../core/promise-animation-frame.js';
 import {safePerformance} from '../core/safe-performance.js';
 import {setProfile} from '../data/profiles-util.js';
+import {ThemeController} from './theme-controller.js';
 import {addFullscreenChangeEventListener, getFullscreenElement} from '../dom/document-util.js';
 import {TextSourceElement} from '../dom/text-source-element.js';
 import {TextSourceGenerator} from '../dom/text-source-generator.js';
 import {TextSourceRange} from '../dom/text-source-range.js';
 import {TextScanner} from '../language/text-scanner.js';
+import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
+
+class SelectionTextSource {
+    /**
+     * @param {string} content
+     * @param {DOMRect[]} rects
+     */
+    constructor(content, rects = []) {
+        /** @type {string} */
+        this._content = content;
+        /** @type {DOMRect[]} */
+        this._rects = rects;
+    }
+
+    /** @type {'element'} */
+    get type() { return 'element'; }
+    
+    /**
+     * @returns {SelectionTextSource}
+     */
+    clone() {
+        return new SelectionTextSource(this._content);
+    }
+
+    /**
+
+    /**
+     * @returns {string}
+     */
+    text() { return this._content; }
+    
+    
+    /**
+     * @param {string} content
+     * @returns {void}
+     */
+    setText(content) {
+        this._content = content;
+    }
+
+    /**
+
+    /**
+     * @param {number} length
+     * @returns {number}
+     */
+    setStartOffset(length) {
+        return 0;
+    }
+
+    /**
+     * @param {number} length
+     * @returns {number}
+     */
+    setEndOffset(length, fromEnd = false) {
+        if (fromEnd) {
+            // Same reason as setStartOffset: no DOM-backed text exists after the
+            // selected OCR text, so no extra sentence context can be appended.
+            return 0;
+        }
+        const previousLength = this._content.length;
+        this._content = this._content.substring(0, Math.min(Math.max(0, length), previousLength));
+        return previousLength - this._content.length;
+    }
+
+    /**
+     * @returns {DOMRect[]}
+     */
+    getRects() { return this._rects; }
+
+    /**
+     * @returns {import('document-util').NormalizedWritingMode}
+     */
+    getWritingMode() { return 'horizontal-tb'; }
+
+    /** */
+    cleanup() {}
+
+    /** */
+    select() {}
+
+    /** */
+    deselect() {}
+
+    /**
+     * @param {import('text-source').TextSource} other
+     * @returns {boolean}
+     */
+    hasSameStart(other) {
+        return other instanceof SelectionTextSource && other.text() === this._content;
+    }
+
+    /**
+     * @returns {Node[]}
+     */
+    getNodesInRange() {
+        return document.body !== null ? [document.body] : [];
+    }
+}
 
 /**
  * This is the main class responsible for scanning and handling webpage content.
@@ -82,6 +182,8 @@ export class Frontend {
         this._pageZoomFactor = 1;
         /** @type {number} */
         this._contentScale = 1;
+        /** @type {?{x: number, y: number}} */
+        this._lastPointerPosition = null;
         /** @type {Promise<void>} */
         this._lastShowPromise = Promise.resolve();
         /** @type {TextSourceGenerator} */
@@ -171,6 +273,8 @@ export class Frontend {
         this._textScanner.prepare();
 
         window.addEventListener('resize', this._onResize.bind(this), false);
+        window.addEventListener('mousedown', this._onPointerLocationEvent.bind(this), true);
+        window.addEventListener('contextmenu', this._onPointerLocationEvent.bind(this), true);
         addFullscreenChangeEventListener(this._updatePopup.bind(this));
 
         const {visualViewport} = window;
@@ -268,10 +372,11 @@ export class Frontend {
     }
 
     /**
+    * @param {{text?: string}=} params
      * @returns {void}
      */
-    _onApiScanSelectedText() {
-        void this._scanSelectedText(false, true, true);
+    _onApiScanSelectedText(params = {}) {
+        void this._scanSelectedText(false, true, true, typeof params.text === 'string' ? params.text : null);
     }
 
     /**
@@ -379,8 +484,21 @@ export class Frontend {
     _onVisualViewportResize() {
         this._updateContentScale();
     }
+    
+    /**
+     * @param {MouseEvent} e
+     * @returns {void}
+     */
+    _onPointerLocationEvent(e) {
+        if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+            this._lastPointerPosition = {x: e.clientX, y: e.clientY};
+        }
+    }
 
     /**
+
+    /**
+     * @param {import('text-scanner').EventArgument<'clear'>} details
      * @returns {void}
      */
     _onTextScannerClear() {
@@ -392,6 +510,7 @@ export class Frontend {
      */
     _onSearchSuccess({type, dictionaryEntries, sentence, inputInfo: {eventType, detail: inputInfoDetail}, textSource, optionsContext, detail, pageTheme}) {
         this._stopClearSelectionDelayed();
+
         let focus = (eventType === 'mouseMove');
         if (typeof inputInfoDetail === 'object' && inputInfoDetail !== null) {
             const focus2 = inputInfoDetail.focus;
@@ -536,6 +655,8 @@ export class Frontend {
         }
     }
 
+    /** */
+
     /**
      * @returns {Promise<void>}
      */
@@ -553,6 +674,7 @@ export class Frontend {
         const preventMiddleMouseOnTextHover = scanningOptions.preventMiddleMouse.onTextHover;
         const preventBackForwardOnPage = this._getPreventSecondaryMouseValueForPageType(scanningOptions.preventBackForward);
         const preventBackForwardOnTextHover = scanningOptions.preventBackForward.onTextHover;
+        const scanningInputs = scanningOptions.inputs;
         this._textScanner.language = options.general.language;
         this._textScanner.setOptions({
             inputs: scanningOptions.inputs,
@@ -593,15 +715,32 @@ export class Frontend {
         const {usePopupWindow, showIframePopupsInRootFrame} = /** @type {import('settings').ProfileOptions} */ (this._options).general;
         const isIframe = !this._useProxyPopup && (window !== window.parent);
 
+        const isSafariExtensionPage =
+            chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+
+        const isSafariPopupFrame =
+            isSafariExtensionPage &&
+            this._pageType === 'popup' &&
+            window !== window.parent;
+
         const currentPopup = this._popup;
 
-        /** @type {Promise<?import('popup').PopupAny>|undefined} */
         let popupPromise;
-        if (usePopupWindow && this._canUseWindowPopup) {
-            popupPromise = this._popupCache.get('window');
-            if (typeof popupPromise === 'undefined') {
-                popupPromise = this._getPopupWindow();
-                this._popupCache.set('window', popupPromise);
+        if (
+                isSafariPopupFrame &&
+                this._parentFrameId !== null &&
+                this._parentPopupId !== null
+            ) {
+                popupPromise = this._popupCache.get('proxy');
+                if (typeof popupPromise === 'undefined') {
+                    popupPromise = this._getProxyPopup();
+                    this._popupCache.set('proxy', popupPromise);
+                }
+            } else if (usePopupWindow && this._canUseWindowPopup) {
+                popupPromise = this._popupCache.get('window');
+                if (typeof popupPromise === 'undefined') {
+                    popupPromise = this._getPopupWindow();
+                    this._popupCache.set('window', popupPromise);
             }
         } else if (
             isIframe &&
@@ -984,7 +1123,11 @@ export class Frontend {
         let documentTitle = document.title;
         if (this._useProxyPopup && this._parentFrameId !== null) {
             try {
-                ({url, documentTitle} = await this._application.crossFrame.invoke(this._parentFrameId, 'frontendGetPageInfo', void 0));
+                ({url, documentTitle} = (
+                    isSafariPopupIframeContext() ?
+                        await invokeSafariParentFrame('frontendGetPageInfo', void 0) :
+                        await this._application.crossFrame.invoke(this._parentFrameId, 'frontendGetPageInfo', void 0)
+                ));
             } catch (e) {
                 // NOP
             }
@@ -1005,11 +1148,34 @@ export class Frontend {
      * @param {boolean} allowEmptyRange
      * @param {boolean} disallowExpandSelection
      * @param {boolean} showEmpty show empty popup if no results are found
+     * @param {?string} fallbackText selected text supplied by the context menu, used for Safari Live Text/OCR selections
      * @returns {Promise<boolean>}
      */
-    async _scanSelectedText(allowEmptyRange, disallowExpandSelection, showEmpty = false) {
+    async _scanSelectedText(allowEmptyRange, disallowExpandSelection, showEmpty = false, fallbackText = null) {
         safePerformance.mark('frontend:scanSelectedText:start');
+        
+        this._textScanner.setCurrentTextSource(null);
+        
+        const selection = window.getSelection();
+        const selectionText = this._normalizeSelectionText(
+            fallbackText !== null ? fallbackText : (selection !== null ? selection.toString() : ''),
+        );
+
         const range = this._getFirstSelectionRange(allowEmptyRange);
+        
+        const useSyntheticSource = (
+            selectionText.length > 0 &&
+            (fallbackText !== null || range === null || this._rangeHasNoRects(range))
+        );
+
+        if (useSyntheticSource) {
+            const source = new SelectionTextSource(selectionText, this._getSelectionFallbackRects());
+            await this._textScanner.search(source, {focus: true, restoreSelection: true}, showEmpty);
+            safePerformance.mark('frontend:scanSelectedText:end');
+            safePerformance.measure('frontend:scanSelectedText', 'frontend:scanSelectedText:start', 'frontend:scanSelectedText:end');
+            return true;
+        }
+        
         if (range === null) { return false; }
         const source = disallowExpandSelection ? TextSourceRange.createLazy(range) : TextSourceRange.create(range);
         await this._textScanner.search(source, {focus: true, restoreSelection: true}, showEmpty);
@@ -1017,6 +1183,50 @@ export class Frontend {
         safePerformance.measure('frontend:scanSelectedText', 'frontend:scanSelectedText:start', 'frontend:scanSelectedText:end');
         return true;
     }
+    
+    /**
+     * @param {string} text
+     * @returns {string}
+     */
+    _normalizeSelectionText(text) {
+        return text.replace(/\s+/g, ' ').trim();
+    }
+    
+    /**
+     * @param {Range} range
+     * @returns {boolean}
+     */
+    _rangeHasNoRects(range) {
+        try {
+            return range.getClientRects().length === 0;
+        } catch (e) {
+            return true;
+        }
+    }
+
+    /**
+     * @returns {DOMRect[]}
+     */
+    _getSelectionFallbackRects() {
+        const selection = window.getSelection();
+        if (selection !== null) {
+            for (let i = 0, ii = selection.rangeCount; i < ii; ++i) {
+                const range = selection.getRangeAt(i);
+                const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 || rect.height > 0);
+                if (rects.length > 0) { return rects; }
+            }
+        }
+
+        const position = this._lastPointerPosition;
+        if (position !== null) {
+            return [new DOMRect(position.x, position.y, 1, 1)];
+        }
+
+        const {innerWidth, innerHeight} = window;
+        return [new DOMRect(Math.max(0, innerWidth / 2), Math.max(0, innerHeight / 2), 1, 1)];
+    }
+
+    /**
 
     /**
      * @param {boolean} allowEmptyRange

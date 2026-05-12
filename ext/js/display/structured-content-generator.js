@@ -148,11 +148,14 @@ export class StructuredContentGenerator {
         }
 
         if (this._contentManager !== null) {
-            const image = this._contentManager instanceof DisplayContentManager ?
+            const useCanvas = this._contentManager instanceof DisplayContentManager &&
+                this._contentManager.supportsOffscreenCanvasMediaLoading();
+            const image = useCanvas ?
                 /** @type {HTMLCanvasElement} */ (this._createElement('canvas', 'gloss-image')) :
                 /** @type {HTMLImageElement} */ (this._createElement('img', 'gloss-image'));
+
             if (sizeUnits === 'em' && (hasPreferredWidth || hasPreferredHeight)) {
-                const emSize = 14; // We could Number.parseFloat(getComputedStyle(document.documentElement).fontSize); here for more accuracy but it would cause a layout and be extremely slow; possible improvement would be to calculate and cache the value
+                const emSize = 14;
                 const scaleFactor = 2 * this._window.devicePixelRatio;
                 image.style.width = `${usedWidth}em`;
                 image.style.height = `${usedWidth * invAspectRatio}em`;
@@ -162,19 +165,18 @@ export class StructuredContentGenerator {
             }
             image.height = image.width * invAspectRatio;
 
-            // Anki will not render images correctly without specifying to use 100% width and height
             image.style.width = '100%';
             image.style.height = '100%';
 
             imageContainer.appendChild(image);
 
-            if (this._contentManager instanceof DisplayContentManager) {
+            if (useCanvas) {
                 this._contentManager.loadMedia(
                     path,
                     dictionary,
-                    (/** @type {HTMLCanvasElement} */(image)).transferControlToOffscreen(),
+                    /** @type {HTMLCanvasElement} */ (image).transferControlToOffscreen(),
                 );
-            } else if (this._contentManager instanceof AnkiTemplateRendererContentManager) {
+            } else {
                 this._contentManager.loadMedia(
                     path,
                     dictionary,

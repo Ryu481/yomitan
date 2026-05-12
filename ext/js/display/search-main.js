@@ -29,7 +29,37 @@ import {SearchActionPopupController} from './search-action-popup-controller.js';
 import {SearchDisplayController} from './search-display-controller.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
+function prepareSafariCrossFrameRpcResponder(application) {
+    window.addEventListener('message', async (event) => {
+        const data = event.data;
+        if (data?.yomitanSafariCrossFrameRpc !== true || data?.type !== 'invoke') { return; }
+        
+        let result;
+        let error = null;
+        
+        try {
+            result = await application.crossFrame.invokeLocal(data.action, data.params);
+        } catch (e) {
+            error = `${e?.message ?? e}`;
+        }
+        
+        if (event.source === null) { return; }
+        
+        event.source.postMessage({
+            yomitanSafariCrossFrameRpc: true,
+            type: 'result',
+            clientId: data.clientId,
+            id: data.id,
+            result,
+            error,
+        }, event.origin);
+    });
+}
+
 await Application.main(true, async (application) => {
+    
+    prepareSafariCrossFrameRpcResponder(application);
+    
     const documentFocusController = new DocumentFocusController('#search-textbox');
     documentFocusController.prepare();
 

@@ -36,6 +36,9 @@ export class DisplayContentManager {
         this._eventListeners = new EventListenerCollection();
         /** @type {import('display-content-manager').LoadMediaRequest[]} */
         this._loadMediaRequests = [];
+        this._isSafari = chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        this._loadMediaData = [];
+        this._mediaCache = new Map();
     }
 
     /** @type {import('display-content-manager').LoadMediaRequest[]} */
@@ -44,13 +47,79 @@ export class DisplayContentManager {
     }
 
     /**
-     * Queues loading media file from a given dictionary.
      * @param {string} path
      * @param {string} dictionary
-     * @param {OffscreenCanvas} canvas
+     * @param {OffscreenCanvas|((url: string) => void)} canvasOrOnLoad
+     * @param {?Function} onUnload
      */
-    loadMedia(path, dictionary, canvas) {
-        this._loadMediaRequests.push({path, dictionary, canvas});
+    loadMedia(path, dictionary, canvasOrOnLoad, onUnload = null) {
+        if (this._supportsOffscreenCanvasMediaLoading()) {
+            this._loadMediaRequests.push({
+                path,
+                dictionary,
+                canvas: canvasOrOnLoad,
+            });
+            return;
+        }
+
+        if (typeof canvasOrOnLoad !== 'function') { return; }
+
+        void this._loadMediaDirect(path, dictionary, canvasOrOnLoad, onUnload);
+    }
+    
+    supportsOffscreenCanvasMediaLoading() {
+        return this._supportsOffscreenCanvasMediaLoading();
+    }
+
+    _supportsOffscreenCanvasMediaLoading() {
+        return !this._isSafari &&
+            typeof OffscreenCanvas !== 'undefined' &&
+            typeof createImageBitmap !== 'undefined' &&
+            typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function';
+    }
+    
+    async _loadMediaDirect(path, dictionary, onLoad, onUnload) {
+        const token = this._token;
+        const data = {onUnload, loaded: false};
+        this._loadMediaData.push(data);
+
+        const media = await this._getMediaDirect(path, dictionary);
+        if (token !== this._token || media.url === null) { return; }
+
+        onLoad(media.url);
+        data.loaded = true;
+    }
+
+    async _getMediaDirect(path, dictionary) {
+        let dictionaryCache = this._mediaCache.get(dictionary);
+        if (typeof dictionaryCache === 'undefined') {
+            dictionaryCache = new Map();
+            this._mediaCache.set(dictionary, dictionaryCache);
+        }
+
+        let cachedData = dictionaryCache.get(path);
+        if (typeof cachedData === 'undefined') {
+            cachedData = {promise: null, data: null, url: null};
+            dictionaryCache.set(path, cachedData);
+            cachedData.promise = this._getMediaDataDirect(path, dictionary, cachedData);
+        }
+
+        return await cachedData.promise;
+    }
+
+    async _getMediaDataDirect(path, dictionary, cachedData) {
+        const [data] = await this._display.application.api.getMedia([{path, dictionary}]);
+
+        if (data === null) {
+            return cachedData;
+        }
+
+        const buffer = base64ToArrayBuffer(data.content);
+        const blob = new Blob([buffer], {type: data.mediaType});
+        cachedData.data = data;
+        cachedData.url = URL.createObjectURL(blob);
+
+        return cachedData;
     }
 
     /**
@@ -62,6 +131,13 @@ export class DisplayContentManager {
         this._eventListeners.removeAllEventListeners();
 
         this._loadMediaRequests = [];
+        
+        for (const {onUnload, loaded} of this._loadMediaData) {
+            if (loaded && typeof onUnload === 'function') {
+                onUnload();
+            }
+        }
+        this._loadMediaData = [];
     }
 
     /**
@@ -83,7 +159,10 @@ export class DisplayContentManager {
      * Execute media requests
      */
     async executeMediaRequests() {
-        this._display.application.api.drawMedia(this._loadMediaRequests, this._loadMediaRequests.map(({canvas}) => canvas));
+        await this._display.application.api.drawMedia(
+            this._loadMediaRequests,
+            this._loadMediaRequests.map(({canvas}) => canvas),
+        );
         this._loadMediaRequests = [];
     }
 
