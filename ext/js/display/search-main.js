@@ -28,8 +28,12 @@ import {Display} from './display.js';
 import {SearchActionPopupController} from './search-action-popup-controller.js';
 import {SearchDisplayController} from './search-display-controller.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
+import {prepareSafariCrossFrameRpcResponder} from '../comm/safari-cross-frame-rpc.js';
 
 await Application.main(true, async (application) => {
+	
+	prepareSafariCrossFrameRpcResponder(application);
+    
     const documentFocusController = new DocumentFocusController('#search-textbox');
     documentFocusController.prepare();
 

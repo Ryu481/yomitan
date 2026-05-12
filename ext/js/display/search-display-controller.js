@@ -543,7 +543,7 @@ export class SearchDisplayController {
      */
     async _setClipboardMonitorEnabled(value) {
         let modify = true;
-        if (value) {
+        if (value && !this._isSafariWebExtension()) {
             value = await this._requestPermissions(['clipboardRead']);
             modify = value;
         }
@@ -563,6 +563,14 @@ export class SearchDisplayController {
         };
         await this._display.application.api.modifySettings([modification], 'search');
     }
+    
+    _isSafariWebExtension() {
+            try {
+                return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+            } catch (e) {
+                return false;
+            }
+        }
 
     /** */
     _updateClipboardMonitorEnabled() {

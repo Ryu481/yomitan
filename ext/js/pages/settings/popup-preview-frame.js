@@ -167,11 +167,29 @@ export class PopupPreviewFrame {
     /**
      * @param {MessageEvent<import('popup-preview-frame.js').ApiMessageAny>} event
      */
-    _onMessage(event) {
-        if (event.origin !== this._targetOrigin) { return; }
-        const {action, params} = event.data;
-        const callback = () => {}; // NOP
-        invokeApiMapHandler(this._windowMessageHandlers, action, params, [], callback);
+    async _onMessage(event) {
+        if (event.origin.toLowerCase() !== this._targetOrigin.toLowerCase()) { return; }
+
+        const {data} = event;
+        if (typeof data !== 'object' || data === null) { return; }
+
+        const {action, params, id} = data;
+        const handler = this._windowMessageHandlers.get(action);
+        if (typeof handler === 'undefined') { return; }
+
+        try {
+            const result = await handler(params);
+            if (typeof id === 'string') {
+                event.source?.postMessage({id, result}, event.origin);
+            }
+        } catch (e) {
+            if (typeof id === 'string') {
+                event.source?.postMessage({
+                    id,
+                    error: e instanceof Error ? e.message : `${e}`,
+                }, event.origin);
+            }
+        }
     }
 
     /** */

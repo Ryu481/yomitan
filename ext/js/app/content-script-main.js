@@ -20,6 +20,7 @@ import {Application} from '../application.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {Frontend} from './frontend.js';
 import {PopupFactory} from './popup-factory.js';
+import {prepareSafariCrossFrameRpcResponder} from '../comm/safari-cross-frame-rpc.js';
 
 await Application.main(false, async (application) => {
     const hotkeyHandler = new HotkeyHandler();
@@ -28,7 +29,7 @@ await Application.main(false, async (application) => {
     const popupFactory = new PopupFactory(application);
     popupFactory.prepare();
 
-    const {browser} = await application.api.getEnvironmentInfo();
+    prepareSafariCrossFrameRpcResponder(application, {popupFactory});
 
     const frontend = new Frontend({
         application,
@@ -42,7 +43,7 @@ await Application.main(false, async (application) => {
         allowRootFramePopupProxy: true,
         childrenSupported: true,
         hotkeyHandler,
-        browser: browser,
     });
+
     await frontend.prepare();
 });

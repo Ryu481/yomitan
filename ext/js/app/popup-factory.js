@@ -21,6 +21,7 @@ import {generateId} from '../core/utilities.js';
 import {PopupProxy} from './popup-proxy.js';
 import {PopupWindow} from './popup-window.js';
 import {Popup} from './popup.js';
+import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
 
 /**
  * A class which is used to generate and manage popups.
@@ -156,12 +157,18 @@ export class PopupFactory {
                 throw new Error('Invalid frameId');
             }
             const useFrameOffsetForwarder = (parentPopupId === null);
-            const info = await this._application.crossFrame.invoke(frameId, 'popupFactoryGetOrCreatePopup', {
+            const params = {
                 id,
                 parentPopupId,
                 frameId,
                 childrenSupported,
-            });
+            };
+
+            const info = (
+                isSafariPopupIframeContext() ?
+                    await invokeSafariParentFrame('popupFactoryGetOrCreatePopup', params) :
+                    await this._application.crossFrame.invoke(frameId, 'popupFactoryGetOrCreatePopup', params)
+            );
             id = info.id;
             const popup = new PopupProxy(
                 this._application,

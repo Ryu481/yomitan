@@ -35,6 +35,8 @@ export class PopupPreviewController {
         this._customOuterCss = querySelectorNotNull(document, '#custom-popup-outer-css');
         /** @type {HTMLElement} */
         this._previewFrameContainer = querySelectorNotNull(document, '.preview-frame-container');
+        this._invokeId = 0;
+        this._pendingInvokes = new Map();
     }
 
     /** */
@@ -58,9 +60,32 @@ export class PopupPreviewController {
 
 
         this._frame.src = '/popup-preview.html';
+        window.addEventListener('message', this._onFrameMessage.bind(this), false);
     }
 
     // Private
+    
+    _onFrameMessage(event) {
+        if (event.origin.toLowerCase() !== this._targetOrigin.toLowerCase()) { return; }
+
+        const {data} = event;
+        if (typeof data !== 'object' || data === null) { return; }
+
+        const {id, result, error} = data;
+        if (typeof id !== 'string') { return; }
+
+        const pending = this._pendingInvokes.get(id);
+        if (typeof pending === 'undefined') { return; }
+
+        this._pendingInvokes.delete(id);
+        clearTimeout(pending.timeout);
+
+        if (typeof error === 'string') {
+            pending.reject(new Error(error));
+        } else {
+            pending.resolve(result);
+        }
+    }
 
     /** */
     _onFrameLoad() {
@@ -82,14 +107,15 @@ export class PopupPreviewController {
     }
 
     /** */
-    _onOptionsContextChange() {
+    async _onOptionsContextChange() {
         const optionsContext = this._settingsController.getOptionsContext();
-        this._invoke('updateOptionsContext', {optionsContext});
+        await this._invoke('updateOptionsContext', {optionsContext});
     }
 
     /** */
-    _onDictionaryEnabled() {
-        this._invoke('updateSearch', {});
+    async _onDictionaryEnabled() {
+        await this._onOptionsContextChange();
+        await this._invoke('updateSearch', {});
     }
 
     /**
@@ -114,8 +140,25 @@ export class PopupPreviewController {
      * @param {import('popup-preview-frame').ApiParams<TName>} params
      */
     _invoke(action, params) {
-        if (this._frame === null || this._frame.contentWindow === null) { return; }
-        this._frame.contentWindow.postMessage({action, params}, this._targetOrigin);
+        if (this._frame === null || this._frame.contentWindow === null) {
+            return Promise.resolve(void 0);
+        }
+
+        const id = `popup-preview-${++this._invokeId}`;
+        const contentWindow = this._frame.contentWindow;
+
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                this._pendingInvokes.delete(id);
+            }, 2000);
+
+            this._pendingInvokes.set(id, {resolve, timeout});
+
+            contentWindow.postMessage(
+                {action, params, id},
+                this._targetOrigin,
+            );
+        });
     }
 }
 

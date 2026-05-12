@@ -40,6 +40,9 @@ function ankiFieldMarkerMayUseClipboard(marker) {
  * @returns {Promise<boolean>}
  */
 export function hasPermissions(permissions) {
+    if (isSafariWebExtension()) {
+        return Promise.resolve(true);
+    }
     return new Promise((resolve, reject) => {
         chrome.permissions.contains(permissions, (result) => {
             const e = chrome.runtime.lastError;
@@ -58,6 +61,9 @@ export function hasPermissions(permissions) {
  * @returns {Promise<boolean>}
  */
 export function setPermissionsGranted(permissions, shouldHave) {
+    if (isSafariWebExtension()) {
+        return Promise.resolve(true);
+    }
     return (
         shouldHave ?
         new Promise((resolve, reject) => {
@@ -87,6 +93,16 @@ export function setPermissionsGranted(permissions, shouldHave) {
  * @returns {Promise<chrome.permissions.Permissions>}
  */
 export function getAllPermissions() {
+    if (isSafariWebExtension()) {
+        return Promise.resolve({
+            permissions: [
+                'clipboardRead',
+                'nativeMessaging',
+                'unlimitedStorage',
+            ],
+            origins: ['<all_urls>'],
+        });
+    }
     return new Promise((resolve, reject) => {
         chrome.permissions.getAll((result) => {
             const e = chrome.runtime.lastError;
@@ -119,6 +135,9 @@ export function getRequiredPermissionsForAnkiFieldValue(fieldValue) {
  * @returns {boolean}
  */
 export function hasRequiredPermissionsForOptions(permissions, options) {
+    if (isSafariWebExtension()) {
+            return true;
+    }
     const permissionsSet = new Set(permissions.permissions);
 
     if (!permissionsSet.has('nativeMessaging') && (options.parsing.enableMecabParser || options.general.enableYomitanApi)) {
@@ -144,4 +163,12 @@ export function hasRequiredPermissionsForOptions(permissions, options) {
     }
 
     return true;
+}
+
+function isSafariWebExtension() {
+    try {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+    } catch (e) {
+        return false;
+    }
 }

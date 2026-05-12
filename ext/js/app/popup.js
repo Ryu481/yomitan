@@ -17,6 +17,7 @@
  */
 
 import {FrameClient} from '../comm/frame-client.js';
+import {SafariFrameClient} from '../comm/safari-frame-client.js';
 import {DynamicProperty} from '../core/dynamic-property.js';
 import {EventDispatcher} from '../core/event-dispatcher.js';
 import {EventListenerCollection} from '../core/event-listener-collection.js';
@@ -540,7 +541,12 @@ export class Popup extends EventDispatcher {
             throw new Error('Options not initialized');
         }
 
-        const useSecurePopupFrameUrl = this._useSecureFrameUrl;
+        // Safari blocks the page from navigating an extension iframe via contentDocument,
+        // so use the regular src-based path there.
+        const useSecurePopupFrameUrl = (
+            this._useSecureFrameUrl &&
+            !this._targetOrigin.startsWith('safari-web-extension://')
+        );
 
         await this._setUpContainer(this._useShadowDom);
 
@@ -550,21 +556,27 @@ export class Popup extends EventDispatcher {
             frame.removeAttribute('srcdoc');
             this._observeFullscreen(true);
             this._onFullscreenChanged();
-            const {contentDocument} = frame;
-            if (contentDocument === null) {
-                // This can occur when running inside a sandboxed frame without "allow-same-origin"
-                // Custom error is used to detect a passive error which should be ignored
-                throw new PopupError('Popup not supported in this context', this);
-            }
             const url = chrome.runtime.getURL('/popup.html');
             if (useSecurePopupFrameUrl) {
+                const {contentDocument} = frame;
+                if (contentDocument === null) {
+                    // This can occur when running inside a sandboxed frame without "allow-same-origin"
+                    // Custom error is used to detect a passive error which should be ignored
+                    throw new PopupError('Popup not supported in this context', this);
+                }
                 contentDocument.location.href = url;
             } else {
                 frame.setAttribute('src', url);
             }
         };
 
-        const frameClient = new FrameClient();
+        const useSafariFrameTransport =
+            /Safari/.test(navigator.userAgent) &&
+            !/Chrome|Chromium|Edg|Firefox/.test(navigator.userAgent);
+
+        const frameClient = useSafariFrameTransport ?
+            new SafariFrameClient() :
+            new FrameClient();
         this._frameClient = frameClient;
         await frameClient.connect(this._frame, this._targetOrigin, this._frameId, setupFrame);
         this._frameConnected = true;
@@ -785,10 +797,6 @@ export class Popup extends EventDispatcher {
             if (contentWindow !== null) {
                 contentWindow.focus();
             }
-        } else if (getFullscreenElement() !== null) {
-            // In fullscreen, only blur the frame to let focus return implicitly.
-            // Calling window.focus() causes Chrome to exit fullscreen asynchronously.
-            this._frame.blur();
         } else {
             // Firefox doesn't like focusing window without first blurring the iframe.
             // this._frame.contentWindow.blur() doesn't work on Firefox for some reason.
@@ -813,11 +821,15 @@ export class Popup extends EventDispatcher {
         /** @type {import('display').DirectApiMessage<TName>} */
         const message = {action, params};
         const wrappedMessage = this._frameClient.createMessage(message);
-        return /** @type {import('display').DirectApiReturn<TName>} */ (await this._application.crossFrame.invoke(
+        if (typeof this._frameClient.invoke === 'function') {
+            return await this._frameClient.invoke('displayPopupMessage1', wrappedMessage);
+        }
+
+        return await this._application.crossFrame.invoke(
             this._frameClient.frameId,
             'displayPopupMessage1',
-            /** @type {import('display').DirectApiFrameClientMessageAny} */ (wrappedMessage),
-        ));
+            wrappedMessage,
+            );
     }
 
     /**

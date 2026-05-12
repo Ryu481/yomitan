@@ -124,19 +124,28 @@ export class DisplayResizer {
     _startFrameResize(e) {
         if (this._token !== null) { return; }
 
+        e.stopPropagation();
+
+        document.documentElement.dataset.resizing = 'true';
+        document.body.classList.add('popup-resizing');
+        window.getSelection()?.removeAllRanges();
+
         const {clientX: x, clientY: y} = e;
-        /** @type {?import('core').TokenObject} */
         const token = {};
         this._token = token;
         this._startOffset = {x, y};
+
         this._eventListeners.addEventListener(window, 'mouseup', this._onFrameResizerMouseUp.bind(this), false);
         this._eventListeners.addEventListener(window, 'blur', this._onFrameResizerWindowBlur.bind(this), false);
         this._eventListeners.addEventListener(window, 'mousemove', this._onFrameResizerMouseMove.bind(this), false);
+        this._eventListeners.addEventListener(window, 'mouseleave', this._onFrameResizerWindowBlur.bind(this), false);
 
-        const {documentElement} = document;
-        if (documentElement !== null) {
-            documentElement.dataset.isResizing = 'true';
-        }
+        this._eventListeners.addEventListener(window, 'selectstart', (event) => {
+            event.preventDefault();
+            window.getSelection()?.removeAllRanges();
+        }, true);
+
+        document.documentElement.dataset.isResizing = 'true';
 
         void this._initializeFrameResize(token);
     }
@@ -145,6 +154,14 @@ export class DisplayResizer {
      * @param {TouchEvent} e
      */
     _startFrameResizeTouch(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this._token !== null) { return; }
+        document.documentElement.dataset.resizing = 'true';
+        document.body.classList.add('popup-resizing');
+        window.getSelection()?.removeAllRanges();
+        
+        
         if (this._token !== null) { return; }
 
         const {clientX: x, clientY: y, identifier} = e.changedTouches[0];
@@ -190,10 +207,18 @@ export class DisplayResizer {
         this._touchIdentifier = null;
         this._token = null;
 
-        const {documentElement} = document;
-        if (documentElement !== null) {
-            delete documentElement.dataset.isResizing;
+        delete document.documentElement.dataset.isResizing;
+        delete document.documentElement.dataset.resizing;
+        document.body.classList.remove('popup-resizing');
+
+        const contentScroll = document.querySelector('#content-scroll');
+        if (contentScroll !== null) {
+            contentScroll.style.overflowX = '';
+            contentScroll.style.overflowY = '';
+            contentScroll.classList.add('scrollbar');
         }
+
+        window.getSelection()?.removeAllRanges();
     }
 
     /**

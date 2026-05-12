@@ -18,6 +18,7 @@
 
 import {EventDispatcher} from '../core/event-dispatcher.js';
 import {log} from '../core/log.js';
+import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
 
 /**
  * This class is a proxy for a Popup that is hosted in a different frame.
@@ -312,6 +313,10 @@ export class PopupProxy extends EventDispatcher {
      * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
      */
     _invoke(action, params) {
+        if (isSafariPopupIframeContext()) {
+            return invokeSafariParentFrame(action, params);
+        }
+
         return this._application.crossFrame.invoke(this._frameId, action, params);
     }
 

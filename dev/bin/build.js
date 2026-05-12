@@ -205,6 +205,10 @@ async function build(buildDir, extDir, manifestUtil, variantNames, manifestPath,
             } else {
                 if (!dryRun) {
                     fs.cpSync(extDir, fullFileName, {recursive: true});
+                    for (const excludeFile of excludeFiles) {
+                        const excludePath = path.join(fullFileName, excludeFile);
+                        fs.rmSync(excludePath, {recursive: true, force: true});
+                    }
                 }
             }
         }
