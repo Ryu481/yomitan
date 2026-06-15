@@ -13,7 +13,7 @@ EOF
 ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 VERSION=0.0.0.0
 APP_NAME="Yomitan Safari"
-BUNDLE_IDENTIFIER="dev.yomitan.safari"
+BUNDLE_IDENTIFIER="ryu67.yomitan.safari"
 PROJECT_LOCATION="$ROOT_DIR/builds/yomitan-safari-app"
 WEB_EXTENSION_DIR="$ROOT_DIR/builds/yomitan-safari-web-extension"
 
@@ -164,32 +164,35 @@ xcrun safari-web-extension-converter \
     --app-name "$APP_NAME" \
     --bundle-identifier "$BUNDLE_IDENTIFIER" \
     --swift \
-    --macos-only \
     --copy-resources \
     --no-open \
     --no-prompt \
     --force
+    
+MARKETING_VERSION="$VERSION"
+BUILD_NUMBER=$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || printf '1')
 
-python3 - "$PROJECT_LOCATION" "$APP_NAME" "$BUNDLE_IDENTIFIER" <<'PY'
+python3 - "$PROJECT_LOCATION" "$APP_NAME" "$BUNDLE_IDENTIFIER" "$VERSION" "$BUILD_NUMBER" "$ROOT_DIR" <<'PY'
 import plistlib
 import re
 import sys
-import textwrap
 from pathlib import Path
 
 project_location = Path(sys.argv[1])
 app_name = sys.argv[2]
 bundle_identifier = sys.argv[3]
-extension_bundle_identifier = f"{bundle_identifier}.extension"
+version = sys.argv[4]
+build_number = sys.argv[5]
+root_dir = Path(sys.argv[6])
 
+extension_bundle_identifier = f"{bundle_identifier}.extension"
 project_root = project_location / app_name
 pbxproj_path = project_root / f"{app_name}.xcodeproj" / "project.pbxproj"
-view_controller_path = project_root / app_name / "ViewController.swift"
-extension_root = project_root / f"{app_name} Extension"
-handler_path = extension_root / "SafariWebExtensionHandler.swift"
-app_info_plist_path = project_root / app_name / "Info.plist"
-extension_info_plist_path = extension_root / "Info.plist"
-anki_connect_js_path = extension_root / "Resources" / "js" / "comm" / "anki-connect.js"
+
+shared_extension_root = project_root / "Shared (Extension)"
+handler_path = shared_extension_root / "SafariWebExtensionHandler.swift"
+
+info_plist_paths = list(project_root.glob("*/Info.plist"))
 
 pbxproj = pbxproj_path.read_text(encoding="utf-8")
 
@@ -204,98 +207,32 @@ def replace_bundle_identifier(match):
 
 pbxproj = re.sub(r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;", replace_bundle_identifier, pbxproj)
 pbxproj = re.sub(
-    r"(ENABLE_HARDENED_RUNTIME = YES;\n(\s+)ENABLE_USER_SELECTED_FILES = readonly;)",
-    r"ENABLE_HARDENED_RUNTIME = YES;\n\2ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;\n\1",
+    r"(ENABLE_HARDENED_RUNTIME = YES;\n)(\s+)(ENABLE_USER_SELECTED_FILES = readonly;)",
+    r"\1\2ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;\n\2\3",
     pbxproj,
     count=2,
 )
+pbxproj = re.sub(
+    r"VERSIONING_SYSTEM = [^;]+;",
+    "VERSIONING_SYSTEM = apple-generic;",
+    pbxproj,
+)
 pbxproj_path.write_text(pbxproj, encoding="utf-8")
 
-view_controller = view_controller_path.read_text(encoding="utf-8")
-view_controller = re.sub(
-    r'let extensionBundleIdentifier = ".*"',
-    f'let extensionBundleIdentifier = "{extension_bundle_identifier}"',
-    view_controller,
-)
-view_controller_path.write_text(view_controller, encoding="utf-8")
+for view_controller_path in project_root.glob("*/ViewController.swift"):
+    view_controller = view_controller_path.read_text(encoding="utf-8")
+    view_controller = re.sub(
+        r'let extensionBundleIdentifier = ".*"',
+        f'let extensionBundleIdentifier = "{extension_bundle_identifier}"',
+        view_controller,
+    )
+    view_controller_path.write_text(view_controller, encoding="utf-8")
 
-handler_source = textwrap.dedent(
-    """
-//
-//  SafariWebExtensionHandler.swift
-//  Yomitan Safari Extension
-//
+handler_source_path = root_dir / "dev" / "safari" / "SafariWebExtensionHandler.swift"
+handler_path.parent.mkdir(parents=True, exist_ok=True)
+handler_path.write_text(handler_source_path.read_text(encoding="utf-8"), encoding="utf-8")
 
-import Foundation
-import SafariServices
-import os.log
-import AppKit
-
-class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
-
-    func beginRequest(with context: NSExtensionContext) {
-        let request = context.inputItems.first as? NSExtensionItem
-
-        let message: Any?
-        if #available(iOS 15.0, macOS 11.0, *) {
-            message = request?.userInfo?[SFExtensionMessageKey]
-        } else {
-            message = request?.userInfo?["message"]
-        }
-
-        guard let body = message as? [String: Any] else {
-            os_log(.error, "Received invalid native message payload from Safari web extension")
-            complete(context: context, response: ["error": "Invalid native message payload"])
-            return
-        }
-
-        handle(message: body, context: context)
-    }
-
-    private func handle(message: [String: Any], context: NSExtensionContext) {
-        guard let action = message["action"] as? String else {
-            complete(context: context, response: ["error": "Missing action"])
-            return
-        }
-
-        switch action {
-            case "getClipboard":
-                getClipboard(context: context)
-            default:
-                complete(context: context, response: ["error": "Unsupported action: " + action])
-        }
-    }
-
-    private func getClipboard(context: NSExtensionContext) {
-        let pasteboard = NSPasteboard.general
-        let changeCount = pasteboard.changeCount
-        let text = pasteboard.string(forType: .string) ?? ""
-
-        complete(context: context, response: [
-            "ok": true,
-            "text": text,
-            "version": changeCount,
-            "updatedAt": Date().timeIntervalSince1970,
-            "source": "SafariWebExtensionHandler"
-        ])
-    }
-
-    private func complete(context: NSExtensionContext, response: [String: Any]) {
-        let item = NSExtensionItem()
-        if #available(iOS 15.0, macOS 11.0, *) {
-            item.userInfo = [SFExtensionMessageKey: response]
-        } else {
-            item.userInfo = ["message": response]
-        }
-        context.completeRequest(returningItems: [item], completionHandler: nil)
-    }
-}
-    """
-).strip() + "\n"
-handler_source = handler_source.replace("__APP_NAME__", app_name)
-handler_path.write_text(handler_source, encoding="utf-8")
-
-for info_plist_path in (app_info_plist_path, extension_info_plist_path):
+for info_plist_path in info_plist_paths:
     with info_plist_path.open("rb") as file:
         info_plist = plistlib.load(file)
     app_transport_security = info_plist.setdefault("NSAppTransportSecurity", {})
