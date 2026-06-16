@@ -33,6 +33,8 @@ export class ScanInputsSimpleController {
         this._mainScanModifierKeyInput = querySelectorNotNull(document, '#main-scan-modifier-key');
         /** @type {boolean} */
         this._mainScanModifierKeyInputHasOther = false;
+        /** @type {boolean} */
+        this._iosOnscreenToggleSupported = false;
         /** @type {HotkeyUtil} */
         this._hotkeyUtil = new HotkeyUtil();
     }
@@ -41,6 +43,7 @@ export class ScanInputsSimpleController {
     async prepare() {
         const {platform: {os}} = await this._settingsController.application.api.getEnvironmentInfo();
         this._hotkeyUtil.os = os;
+        this._iosOnscreenToggleSupported = (os === 'ios') || /(?:iPad|iPhone|iPod)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
         this._mainScanModifierKeyInputHasOther = false;
         this._populateSelect(this._mainScanModifierKeyInput, this._mainScanModifierKeyInputHasOther);
@@ -53,7 +56,8 @@ export class ScanInputsSimpleController {
 
         this._settingsController.on('scanInputsChanged', this._onScanInputsChanged.bind(this));
         this._settingsController.on('optionsChanged', this._onOptionsChanged.bind(this));
-        this._onOptionsChanged({options, optionsContext});
+        await this._selectIosOnscreenToggleByDefault(options);
+        this._onOptionsChanged({options: await this._settingsController.getOptions(), optionsContext});
     }
 
     /** */
@@ -134,6 +138,9 @@ export class ScanInputsSimpleController {
         const modifierKeys = [
             {value: 'none', name: 'No key'},
         ];
+        if (this._iosOnscreenToggleSupported) {
+            modifierKeys.push({value: 'onscreen-toggle', name: 'Onscreen Toggle'});
+        }
         for (const value of /** @type {import('input').ModifierKey[]} */ (['alt', 'ctrl', 'shift', 'meta'])) {
             const name = this._hotkeyUtil.getModifierDisplayValue(value);
             modifierKeys.push({value, name});
@@ -194,6 +201,22 @@ export class ScanInputsSimpleController {
                 deleteCount: 1,
                 items: [],
             }]);
+        }
+    }
+
+
+    /**
+     * @param {import('settings').Options} options
+     * @returns {Promise<void>}
+     */
+    async _selectIosOnscreenToggleByDefault(options) {
+        if (!this._iosOnscreenToggleSupported) { return; }
+        const {scanning: {inputs}} = options;
+        const index = this._getIndexOfMainScanInput(inputs);
+        if (index < 0) { return; }
+        const includeValues = this._splitValue(inputs[index].include);
+        if (includeValues.length === 1 && includeValues[0] === 'shift') {
+            await this._setMainScanInputs(['onscreen-toggle']);
         }
     }
 

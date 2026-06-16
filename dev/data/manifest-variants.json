@@ -109,7 +109,8 @@
                     "popup.html",
                     "template-renderer.html",
                     "js/*",
-                    "lib/resvg.wasm"
+                    "lib/resvg.wasm",
+                    "images/yomitan-icon.svg"
                 ],
                 "matches": [
                     "<all_urls>"

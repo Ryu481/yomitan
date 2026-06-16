@@ -28,6 +28,7 @@ import {TextSourceElement} from '../dom/text-source-element.js';
 import {TextSourceGenerator} from '../dom/text-source-generator.js';
 import {TextSourceRange} from '../dom/text-source-range.js';
 import {TextScanner} from '../language/text-scanner.js';
+import {IosOnscreenToggle} from './ios-onscreen-toggle.js';
 import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
 
 class SelectionTextSource {
@@ -214,6 +215,12 @@ export class Frontend {
         this._isPointerOverPopup = false;
         /** @type {?import('settings').OptionsContext} */
         this._optionsContextOverride = null;
+        /** @type {IosOnscreenToggle} */
+        this._iosOnscreenToggle = new IosOnscreenToggle(this._onIosOnscreenToggleActiveChanged.bind(this));
+        /** @type {boolean} */
+        this._iosOnscreenToggleSelected = false;
+        /** @type {boolean} */
+        this._iosOnscreenToggleFrameAllowed = (this._depth === 0 && this._parentPopupId === null && this._pageType === 'web');
 
         /* eslint-disable @stylistic/no-multi-spaces */
         /** @type {import('application').ApiMap} */
@@ -675,9 +682,11 @@ export class Frontend {
         const preventBackForwardOnPage = this._getPreventSecondaryMouseValueForPageType(scanningOptions.preventBackForward);
         const preventBackForwardOnTextHover = scanningOptions.preventBackForward.onTextHover;
         const scanningInputs = scanningOptions.inputs;
+        this._iosOnscreenToggleSelected = this._isIosOnscreenToggleSelected(scanningInputs);
+        this._iosOnscreenToggle.setEnabled(this._isIos() && this._iosOnscreenToggleFrameAllowed && this._iosOnscreenToggleSelected);
         this._textScanner.language = options.general.language;
         this._textScanner.setOptions({
-            inputs: scanningOptions.inputs,
+            inputs: this._getScanningInputsForTextScanner(scanningInputs),
             deepContentScan: scanningOptions.deepDomScan,
             normalizeCssZoom: scanningOptions.normalizeCssZoom,
             selectText: scanningOptions.selectText,
@@ -872,13 +881,18 @@ export class Frontend {
      * @returns {Element[]}
      */
     _ignoreElements() {
+        const ignoreElements = [];
+        const iosOnscreenToggleNode = this._iosOnscreenToggle.node;
+        if (iosOnscreenToggleNode !== null) {
+            ignoreElements.push(iosOnscreenToggleNode);
+        }
         if (this._popup !== null) {
             const container = this._popup.container;
             if (container !== null) {
-                return [container];
+                ignoreElements.push(container);
             }
         }
-        return [];
+        return ignoreElements;
     }
 
     /**
@@ -888,6 +902,11 @@ export class Frontend {
      */
     async _ignorePoint(x, y) {
         try {
+            const iosOnscreenToggleNode = this._iosOnscreenToggle.node;
+            if (iosOnscreenToggleNode !== null) {
+                const rect = iosOnscreenToggleNode.getBoundingClientRect();
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) { return true; }
+            }
             return this._popup !== null && await this._popup.containsPoint(x, y);
         } catch (e) {
             if (!this._application.webExtension.unloaded) {
@@ -960,6 +979,7 @@ export class Frontend {
      * @returns {Promise<void>}
      */
     _showPopupContent(textSource, optionsContext, details) {
+        this._iosOnscreenToggle.bringToFront();
         const sourceRects = [];
         for (const {left, top, right, bottom} of textSource.getRects()) {
             sourceRects.push({left, top, right, bottom});
@@ -983,11 +1003,60 @@ export class Frontend {
         return this._lastShowPromise;
     }
 
+
+    /**
+     * @param {boolean} active
+     * @returns {void}
+     */
+    _onIosOnscreenToggleActiveChanged(active) {
+        void this._updateOptionsInternal();
+        if (!active) {
+            this._clearSelection(true);
+        }
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    _isIos() {
+        return /(?:iPad|iPhone|iPod)/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    /**
+     * @param {import('settings').ScanningInput[]} inputs
+     * @returns {boolean}
+     */
+    _isIosOnscreenToggleSelected(inputs) {
+        return inputs.some(({include}) => include.split(/[,;\s]+/).map((v) => v.trim().toLowerCase()).includes('onscreen-toggle'));
+    }
+
+    /**
+     * On iOS, the onscreen toggle reuses the same TextScanner path as the existing
+     * "No key" setting. When the toggle is inactive, no scan input can match;
+     * when it is active, the virtual modifier is removed and the input becomes the
+     * equivalent of "No key".
+     * @param {import('settings').ScanningInput[]} inputs
+     * @returns {import('settings').ScanningInput[]}
+     */
+    _getScanningInputsForTextScanner(inputs) {
+        if (!this._iosOnscreenToggleSelected || !this._isIos()) { return inputs; }
+        if (this._iosOnscreenToggleFrameAllowed && !this._iosOnscreenToggle.active) { return []; }
+        return inputs.map((input) => ({
+            ...input,
+            include: input.include.split(/[,;\s]+/).map((v) => v.trim()).filter((v) => v.length > 0 && v.toLowerCase() !== 'onscreen-toggle').join(', '),
+        }));
+    }
+
     /**
      * @returns {void}
      */
     _updateTextScannerEnabled() {
-        const enabled = (this._options !== null && this._options.general.enable && !this._disabledOverride);
+        const enabled = (
+            this._options !== null &&
+            this._options.general.enable &&
+            !this._disabledOverride
+        );
         if (enabled === this._textScanner.isEnabled()) { return; }
         this._textScanner.setEnabled(enabled);
         if (this._textScannerHasBeenEnabled) {

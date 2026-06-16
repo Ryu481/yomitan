@@ -102,10 +102,14 @@ class DisplayController {
         }
 
         for (let i = 0; i < modifierKeyHint.length; i++) {
+            if (currentModifierKey === 'onscreen-toggle') {
+                modifierKeyHint[i].textContent = 'Press Onscreen Toggle to scan';
+                continue;
+            }
             modifierKeyHint[i].textContent = currentModifierKey ? 'Hold ' : 'Hover over text to scan';
             if (currentModifierKey) {
                 const em = document.createElement('em');
-                em.textContent = modifierKeys[currentModifierKey];
+                em.textContent = modifierKeys[currentModifierKey] ?? currentModifierKey;
                 modifierKeyHint[i].appendChild(em);
                 modifierKeyHint[i].appendChild(document.createTextNode(' to scan'));
             }
