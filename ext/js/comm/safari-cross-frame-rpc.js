@@ -177,6 +177,7 @@ export function invokeSafariParentFrame(action, params) {
 window.addEventListener('message', (event) => {
     const data = event.data;
     if (data?.yomitanSafariCrossFrameRpc !== true || data?.type !== 'result') { return; }
+    if (event.source !== window.parent) { return; }
     if (data.clientId !== clientId) { return; }
 
     const item = pending.get(data.id);

@@ -55,6 +55,15 @@ function setupSafariPopupRpcEarly() {
         if (message?.yomitanSafariPopupRpc !== true || message?.type !== 'invoke') {
             return;
         }
+        if (event.source !== window.parent) {
+            return;
+        }
+
+        const targetOrigin = (
+            typeof event.origin === 'string' &&
+            event.origin.length > 0 &&
+            event.origin !== 'null'
+        ) ? event.origin : '*';
 
         try {
 
@@ -77,7 +86,7 @@ function setupSafariPopupRpcEarly() {
                 clientId: message.clientId,
                 id: message.id,
                 result
-            }, '*');
+            }, targetOrigin);
         } catch (e) {
             console.error('[SafariPopupIframe] invoke failed', e);
 
@@ -87,7 +96,7 @@ function setupSafariPopupRpcEarly() {
                 clientId: message.clientId,
                 id: message.id,
                 error: `${e?.message ?? e}`
-            }, '*');
+            }, targetOrigin);
         }
     });
 

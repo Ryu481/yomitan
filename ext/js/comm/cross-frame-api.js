@@ -62,6 +62,16 @@ export class CrossFrameAPIPort extends EventDispatcher {
         return this._otherFrameId;
     }
 
+    /** @type {boolean} */
+    get isConnected() {
+        return this._port !== null;
+    }
+
+    /** @type {number} */
+    get activeInvocationCount() {
+        return this._activeInvocations.size;
+    }
+
     /**
      * @throws {Error}
      */
@@ -443,11 +453,17 @@ export class CrossFrameAPI {
         commPort.off('disconnect', this._onDisconnectBind);
         const {otherTabId, otherFrameId} = commPort;
         const tabPorts = this._commPorts.get(otherTabId);
-        if (typeof tabPorts !== 'undefined') {
-            tabPorts.delete(otherFrameId);
-            if (tabPorts.size === 0) {
-                this._commPorts.delete(otherTabId);
-            }
+        if (typeof tabPorts === 'undefined') { return; }
+
+        // A stale port can disconnect after a newer port for the same
+        // tab/frame pair has already been registered. In that case, deleting
+        // by key would remove the newer valid connection from the map. Only
+        // the currently registered port is allowed to remove itself.
+        if (tabPorts.get(otherFrameId) !== commPort) { return; }
+
+        tabPorts.delete(otherFrameId);
+        if (tabPorts.size === 0) {
+            this._commPorts.delete(otherTabId);
         }
     }
 
@@ -492,12 +508,30 @@ export class CrossFrameAPI {
      * @returns {CrossFrameAPIPort}
      */
     _setupCommPort(otherTabId, otherFrameId, port) {
-        const commPort = new CrossFrameAPIPort(otherTabId, otherFrameId, port, this._apiMap);
         let tabPorts = this._commPorts.get(otherTabId);
         if (typeof tabPorts === 'undefined') {
             tabPorts = new Map();
             this._commPorts.set(otherTabId, tabPorts);
         }
+
+        const existingCommPort = tabPorts.get(otherFrameId);
+        if (typeof existingCommPort !== 'undefined') {
+            // Do not replace a live port while it still has pending requests.
+            // Otherwise, a valid in-flight invocation can be orphaned and its
+            // later ack/result will arrive at a port whose request map does not
+            // contain the id. The incoming duplicate port is closed before it is
+            // registered, so it cannot later remove the valid port from the map.
+            if (existingCommPort.isConnected && existingCommPort.activeInvocationCount > 0) {
+                port.disconnect();
+                return existingCommPort;
+            }
+
+            // Replacing an idle port is safe, but make the old port unable to
+            // delete the new mapping if its onDisconnect event fires later.
+            existingCommPort.off('disconnect', this._onDisconnectBind);
+        }
+
+        const commPort = new CrossFrameAPIPort(otherTabId, otherFrameId, port, this._apiMap);
         tabPorts.set(otherFrameId, commPort);
         commPort.prepare();
         commPort.on('disconnect', this._onDisconnectBind);

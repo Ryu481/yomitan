@@ -634,7 +634,11 @@ export class Display extends EventDispatcher {
     close() {
         switch (this._pageType) {
             case 'popup':
-                void this.invokeContentOrigin('frontendClosePopup', void 0);
+                if (isSafariPopupIframeContext() && this._parentPopupId !== null) {
+                    void invokeSafariParentFrame('popupFactoryHide', {id: this._parentPopupId, changeFocus: true});
+                } else {
+                    void this.invokeContentOrigin('frontendClosePopup', void 0);
+                }
                 break;
             case 'search':
                 void this._closeTab();
