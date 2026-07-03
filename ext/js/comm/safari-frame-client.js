@@ -39,6 +39,14 @@ export class SafariFrameClient {
                     return;
                 }
 
+                if (event.source !== this._frame?.contentWindow) {
+                    console.warn('[SafariFrameClient] ready from unexpected frame', {
+                        eventOrigin: event.origin,
+                        expectedOrigin: this._targetOrigin
+                    });
+                    return;
+                }
+
                 if (!this._isExpectedOrigin(event.origin)) {
                     console.warn('[SafariFrameClient] ready from unexpected origin', {
                         eventOrigin: event.origin,
@@ -91,7 +99,7 @@ export class SafariFrameClient {
                 id,
                 apiAction: action,
                 params
-            }, '*');
+            }, this._targetOrigin ?? '*');
 
         });
     }
@@ -116,6 +124,14 @@ export class SafariFrameClient {
         const data = event.data;
 
         if (data?.yomitanSafariPopupRpc !== true || data?.type !== 'result') {
+            return;
+        }
+
+        if (event.source !== this._frame?.contentWindow) {
+            console.warn('[SafariFrameClient] result from unexpected frame', {
+                eventOrigin: event.origin,
+                expectedOrigin: this._targetOrigin
+            });
             return;
         }
 
