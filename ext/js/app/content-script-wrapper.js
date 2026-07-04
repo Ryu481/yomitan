@@ -17,6 +17,10 @@
  */
 
 (async () => {
+    const loadKey = Symbol.for('yomitan.contentScriptMainLoaded');
+    if (globalThis[loadKey] === true) { return; }
+    globalThis[loadKey] = true;
+
     const src = chrome.runtime.getURL('js/app/content-script-main.js');
     // eslint-disable-next-line no-unsanitized/method
     await import(src);

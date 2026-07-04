@@ -340,6 +340,10 @@ export class CrossFrameAPI {
         this._apiMap = new Map();
         /** @type {(port: CrossFrameAPIPort) => void} */
         this._onDisconnectBind = this._onDisconnect.bind(this);
+        /** @type {(port: chrome.runtime.Port) => void} */
+        this._onConnectBind = this._onConnect.bind(this);
+        /** @type {boolean} */
+        this._isPrepared = false;
         /** @type {?number} */
         this._tabId = tabId;
         /** @type {?number} */
@@ -362,7 +366,9 @@ export class CrossFrameAPI {
 
     /** */
     prepare() {
-        chrome.runtime.onConnect.addListener(this._onConnect.bind(this));
+        if (this._isPrepared) { return; }
+        this._isPrepared = true;
+        chrome.runtime.onConnect.addListener(this._onConnectBind);
     }
 
     /**
