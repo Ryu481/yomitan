@@ -397,6 +397,15 @@ export class CrossFrameAPI {
                 throw new Error('Unknown target tab id for invocation');
             }
         }
+
+        // Safari can create two bridged runtime ports in the same JS context
+        // when the requested target is the current frame. That leaves both
+        // ends of the bridge handled by this frame and can duplicate ACK/result
+        // messages. Keep same-frame calls local instead of opening a port.
+        if (targetTabId === this._tabId && targetFrameId === this._frameId) {
+            return await this.invokeLocal(action, params);
+        }
+
         const commPort = await this._getOrCreateCommPort(targetTabId, targetFrameId);
         return await commPort.invoke(action, params, this._ackTimeout, this._responseTimeout);
     }
@@ -532,9 +541,14 @@ export class CrossFrameAPI {
                 return existingCommPort;
             }
 
-            // Replacing an idle port is safe, but make the old port unable to
-            // delete the new mapping if its onDisconnect event fires later.
+            // Replacing an idle port is safe, but the old CrossFrameAPIPort
+            // must be fully disconnected. Removing only the map disconnect
+            // listener is not enough: its runtime port onMessage listener would
+            // stay alive and could still answer future invokes, producing
+            // duplicate ACK/result messages. Remove the map listener first so
+            // the stale port cannot delete the new mapping during cleanup.
             existingCommPort.off('disconnect', this._onDisconnectBind);
+            existingCommPort.disconnect();
         }
 
         const commPort = new CrossFrameAPIPort(otherTabId, otherFrameId, port, this._apiMap);
