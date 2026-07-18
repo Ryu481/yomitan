@@ -497,6 +497,7 @@ export const japaneseTransforms = {
         },
         '-過ぎる': {
             name: '-過ぎる',
+            readingTransform: '-すぎる',
             description: 'Shows something "is too..." or someone is doing something "too much".\n' +
             'Usage: Attach 過ぎる to the continuative form (連用形) of verbs, or to the stem of adjectives.',
             i18n: [

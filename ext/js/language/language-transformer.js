@@ -50,11 +50,11 @@ export class LanguageTransformer {
         const transforms2 = [];
 
         for (const [transformId, transform] of Object.entries(transforms)) {
-            const {name, description, rules} = transform;
+            const {name, description, readingTransform, rules} = transform;
             /** @type {import('language-transformer-internal').Rule[]} */
             const rules2 = [];
             for (let j = 0, jj = rules.length; j < jj; ++j) {
-                const {type, isInflected, deinflect, conditionsIn, conditionsOut} = rules[j];
+                const {type, isInflected, deinflect, inflect, conditionsIn, conditionsOut} = rules[j];
                 const conditionFlagsIn = this._getConditionFlagsStrict(conditionFlagsMap, conditionsIn);
                 if (conditionFlagsIn === null) { throw new Error(`Invalid conditionsIn for transform ${transformId}.rules[${j}]`); }
                 const conditionFlagsOut = this._getConditionFlagsStrict(conditionFlagsMap, conditionsOut);
@@ -63,13 +63,14 @@ export class LanguageTransformer {
                     type,
                     isInflected,
                     deinflect,
+                    inflect,
                     conditionsIn: conditionFlagsIn,
                     conditionsOut: conditionFlagsOut,
                 });
             }
             const isInflectedTests = rules.map((rule) => rule.isInflected);
             const heuristic = new RegExp(isInflectedTests.map((regExp) => regExp.source).join('|'));
-            transforms2.push({id: transformId, name, description, rules: rules2, heuristic});
+            transforms2.push({id: transformId, name, description, readingTransform, rules: rules2, heuristic});
         }
 
         this._nextFlagIndex = nextFlagIndex;
@@ -144,6 +145,73 @@ export class LanguageTransformer {
             }
         }
         return results;
+    }
+
+    /**
+     * Reconstructs an inflected spelling from a dictionary-form spelling and a
+     * deinflection trace. A configured reading transform or an unambiguous
+     * parallel rule with the same conditions is used when necessary. This is
+     * useful for readings whose inflection differs from the written form.
+     * @param {string} text
+     * @param {import('language-transformer-internal').Trace} trace
+     * @returns {import('language-transformer-internal').InflectedText|null}
+     */
+    getInflectedText(text, trace) {
+        let usedAlternativeRule = false;
+        for (const {transform: transformId, ruleIndex} of trace) {
+            const transform = this._transforms.find(({id}) => id === transformId);
+            if (typeof transform === 'undefined') { return null; }
+
+            const tracedRule = transform.rules[ruleIndex];
+            if (typeof tracedRule?.inflect !== 'function') { return null; }
+
+            if (typeof transform.readingTransform === 'string') {
+                const readingTransform = this._transforms.find(({id}) => id === transform.readingTransform);
+                if (typeof readingTransform === 'undefined') { return null; }
+                const candidates = this._getInflectionCandidates(text, tracedRule, readingTransform.rules);
+                if (candidates.size > 1) { return null; }
+                if (candidates.size === 1) {
+                    [text] = candidates;
+                    usedAlternativeRule = true;
+                    continue;
+                }
+            }
+
+            let inflectedText = tracedRule.inflect(text);
+            if (inflectedText === null) {
+                const candidates = this._getInflectionCandidates(text, tracedRule, transform.rules);
+                if (candidates.size !== 1) { return null; }
+                [inflectedText] = candidates;
+                usedAlternativeRule = true;
+            }
+            if (inflectedText === null) { return null; }
+            text = inflectedText;
+        }
+        return {text, usedAlternativeRule};
+    }
+
+    /**
+     * @param {string} text
+     * @param {import('language-transformer-internal').Rule} tracedRule
+     * @param {import('language-transformer-internal').Rule[]} rules
+     * @returns {Set<string>}
+     */
+    _getInflectionCandidates(text, tracedRule, rules) {
+        /** @type {Set<string>} */
+        const candidates = new Set();
+        for (const rule of rules) {
+            if (
+                rule.type !== tracedRule.type ||
+                rule.conditionsIn !== tracedRule.conditionsIn ||
+                rule.conditionsOut !== tracedRule.conditionsOut ||
+                typeof rule.inflect !== 'function'
+            ) {
+                continue;
+            }
+            const candidate = rule.inflect(text);
+            if (candidate !== null) { candidates.add(candidate); }
+        }
+        return candidates;
     }
 
     /**

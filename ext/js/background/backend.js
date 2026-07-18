@@ -1748,8 +1748,14 @@ export class Backend {
                 originalTextLength > 0 &&
                 (originalTextLength !== character.length || isCodePointJapanese(codePoint))
                 ) {
-                    const {headwords: [{term, reading}]} = dictionaryEntries[0];
+                    const {headwords: [primaryHeadword]} = dictionaryEntries[0];
+                    let {term, reading} = primaryHeadword;
                     const source = substring.substring(0, originalTextLength);
+                    const sourceInfo = primaryHeadword.sources.find(({originalText, isPrimary, matchType}) => originalText === source && isPrimary && matchType === 'exact');
+                    if (typeof sourceInfo?.transformedReading === 'string') {
+                        term = sourceInfo.transformedText;
+                        reading = sourceInfo.transformedReading;
+                    }
                     for (const {text: text2, reading: reading2} of distributeFuriganaInflected(term, reading, source)) {
                         textSegments.push({text: text2, reading: reading2});
                     }

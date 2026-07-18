@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {describe, expect, test} from 'vitest';
 import {japaneseTransforms} from '../../ext/js/language/ja/japanese-transforms.js';
 import {LanguageTransformer} from '../../ext/js/language/language-transformer.js';
 import {testLanguageTransformer} from '../fixtures/language-transformer-test.js';
@@ -1592,3 +1593,32 @@ const tests = [
 const languageTransformer = new LanguageTransformer();
 languageTransformer.addDescriptor(japaneseTransforms);
 testLanguageTransformer(languageTransformer, tests);
+
+describe('inflected reading reconstruction', () => {
+    /** @type {[source: string, term: string, reading: string, condition: string, expected: string, usedAlternativeRule: boolean][]} */
+    const data = [
+        ['来て', '来る', 'くる', 'vk', 'きて', true],
+        ['來て', '來る', 'くる', 'vk', 'きて', true],
+        ['来ている', '来る', 'くる', 'vk', 'きている', true],
+        ['来なかった', '来る', 'くる', 'vk', 'こなかった', true],
+        ['来させられない', '来る', 'くる', 'vk', 'こさせられない', true],
+        ['来過ぎる', '来る', 'くる', 'vk', 'きすぎる', true],
+        ['持って来て', '持って来る', 'もってくる', 'vk', 'もってきて', true],
+        ['食べて', '食べる', 'たべる', 'v1', 'たべて', false],
+        ['食べ過ぎる', '食べる', 'たべる', 'v1', 'たべすぎる', true],
+    ];
+
+    test.each(data)('%s / %s -> %s', (source, term, reading, condition, expected, usedAlternativeRule) => {
+        const conditionFlags = languageTransformer.getConditionFlagsFromConditionType(condition);
+        const transformed = languageTransformer.transform(source).find(({text, conditions}) => text === term && LanguageTransformer.conditionsMatch(conditions, conditionFlags));
+        expect(transformed).toBeDefined();
+        expect(languageTransformer.getInflectedText(reading, transformed?.trace ?? [])).toStrictEqual({text: expected, usedAlternativeRule});
+    });
+
+    test('returns null when parallel rules are ambiguous', () => {
+        const conditionFlags = languageTransformer.getConditionFlagsFromConditionType('vs');
+        const transformed = languageTransformer.transform('為させる').find(({text, conditions}) => text === '為る' && LanguageTransformer.conditionsMatch(conditions, conditionFlags));
+        expect(transformed).toBeDefined();
+        expect(languageTransformer.getInflectedText('する', transformed?.trace ?? [])).toBeNull();
+    });
+});

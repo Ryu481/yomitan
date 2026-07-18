@@ -21,12 +21,15 @@ export type Transform = {
     rules: Rule[];
     heuristic: RegExp;
     description?: string;
+    /** ID of an equivalent transform whose inflected forms use reading characters. */
+    readingTransform?: string;
 };
 
 export type Rule = {
     type: 'suffix' | 'prefix' | 'wholeWord' | 'other';
     isInflected: RegExp;
     deinflect: (inflectedWord: string) => string;
+    inflect?: (deinflectedWord: string) => string | null;
     conditionsIn: number;
     conditionsOut: number;
 };
@@ -35,6 +38,11 @@ export type TransformedText = {
     text: string;
     conditions: number;
     trace: Trace;
+};
+
+export type InflectedText = {
+    text: string;
+    usedAlternativeRule: boolean;
 };
 
 export type Trace = TraceFrame[];

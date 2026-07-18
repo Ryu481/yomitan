@@ -24067,5 +24067,95 @@
         "frequencies": []
       }
     ]
+  },
+  {
+    "name": "Irregular kuru reading",
+    "originalTextLength": 2,
+    "dictionaryEntries": [
+      {
+        "type": "term",
+        "isPrimary": true,
+        "textProcessorRuleChainCandidates": [
+          []
+        ],
+        "inflectionRuleChainCandidates": [
+          {
+            "source": "algorithm",
+            "inflectionRules": [
+              {
+                "name": "-て",
+                "description": "て-form.\nIt has a myriad of meanings. Primarily, it is a conjunctive particle that connects two clauses together.\nUsage: Attach て to the continuative form (連用形) of verbs after euphonic change form, くて to the stem of i-adjectives."
+              }
+            ]
+          }
+        ],
+        "score": 1,
+        "frequencyOrder": 0,
+        "dictionaryIndex": 0,
+        "dictionaryAlias": "termsDictAlias",
+        "sourceTermExactMatchCount": 1,
+        "matchPrimaryReading": false,
+        "maxOriginalTextLength": 2,
+        "headwords": [
+          {
+            "index": 0,
+            "headwordIndex": 0,
+            "term": "来る",
+            "reading": "くる",
+            "sources": [
+              {
+                "originalText": "来て",
+                "transformedText": "来て",
+                "deinflectedText": "来る",
+                "matchType": "exact",
+                "matchSource": "term",
+                "isPrimary": true,
+                "transformedReading": "きて"
+              }
+            ],
+            "tags": [],
+            "wordClasses": [
+              "vk"
+            ]
+          }
+        ],
+        "definitions": [
+          {
+            "index": 0,
+            "headwordIndices": [
+              0
+            ],
+            "dictionary": "Test Dictionary 2",
+            "dictionaryIndex": 0,
+            "dictionaryAlias": "termsDictAlias",
+            "id": 38,
+            "score": 1,
+            "frequencyOrder": 0,
+            "sequences": [
+              30
+            ],
+            "isPrimary": true,
+            "tags": [
+              {
+                "name": "vk",
+                "category": "default",
+                "order": 0,
+                "score": 0,
+                "content": [],
+                "dictionaries": [
+                  "Test Dictionary 2"
+                ],
+                "redundant": false
+              }
+            ],
+            "entries": [
+              "kuru definition"
+            ]
+          }
+        ],
+        "pronunciations": [],
+        "frequencies": []
+      }
+    ]
   }
 ]

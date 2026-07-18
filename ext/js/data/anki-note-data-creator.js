@@ -965,7 +965,14 @@ function getCloze(dictionaryEntry, context) {
                 term = dictionaryEntry.headwords[0].term;
                 reading = dictionaryEntry.headwords[0].reading;
                 const primarySource = getPrimarySource(dictionaryEntry);
-                if (primarySource !== null) { originalText = primarySource.originalText; }
+                if (primarySource !== null) {
+                    originalText = primarySource.originalText;
+                    const {transformedReading} = primarySource;
+                    if (typeof transformedReading === 'string') {
+                        term = primarySource.transformedText;
+                        reading = transformedReading;
+                    }
+                }
             }
             break;
         case 'kanji':

@@ -78,3 +78,42 @@ describe('Backend._onApiParseText', () => {
         ]);
     });
 });
+
+describe('Backend._textParseScanning', () => {
+    test('uses the deinflector-provided reading for irregular inflections', async () => {
+        const source = {
+            originalText: '来て',
+            transformedText: '来て',
+            transformedReading: 'きて',
+            deinflectedText: '来る',
+            matchType: /** @type {const} */ ('exact'),
+            matchSource: /** @type {const} */ ('term'),
+            isPrimary: true,
+        };
+        const dictionaryEntries = [{
+            headwords: [{term: '来る', reading: 'くる', sources: [source], headwordIndex: 0}],
+            frequencies: [],
+        }];
+        const context = {
+            _getProfileOptions: () => ({}),
+            _getTranslatorFindTermsOptions: () => ({}),
+            _translator: {
+                findTerms: async () => ({dictionaryEntries, originalTextLength: 2}),
+            },
+            _textParseCache: new Map(),
+        };
+        // eslint-disable-next-line no-underscore-dangle, @typescript-eslint/unbound-method
+        const textParseScanning = Backend.prototype._textParseScanning;
+
+        const results = await textParseScanning.call(/** @type {*} */ (context), '来て', 10, /** @type {*} */ ({}), false);
+
+        expect(results).toStrictEqual([[
+            {
+                text: '来',
+                reading: 'き',
+                headwords: [[{term: '来る', reading: 'くる', sources: [source], frequencies: []}]],
+            },
+            {text: 'て', reading: ''},
+        ]]);
+    });
+});

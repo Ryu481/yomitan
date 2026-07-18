@@ -31,6 +31,7 @@ export function suffixInflection(inflectedSuffix, deinflectedSuffix, conditionsI
         isInflected: suffixRegExp,
         deinflected: deinflectedSuffix,
         deinflect: (text) => text.slice(0, -inflectedSuffix.length) + deinflectedSuffix,
+        inflect: (text) => (text.endsWith(deinflectedSuffix) ? text.slice(0, text.length - deinflectedSuffix.length) + inflectedSuffix : null),
         conditionsIn,
         conditionsOut,
     };
@@ -50,6 +51,7 @@ export function prefixInflection(inflectedPrefix, deinflectedPrefix, conditionsI
         type: 'prefix',
         isInflected: prefixRegExp,
         deinflect: (text) => deinflectedPrefix + text.slice(inflectedPrefix.length),
+        inflect: (text) => (text.startsWith(deinflectedPrefix) ? inflectedPrefix + text.slice(deinflectedPrefix.length) : null),
         conditionsIn,
         conditionsOut,
     };
@@ -69,6 +71,7 @@ export function wholeWordInflection(inflectedWord, deinflectedWord, conditionsIn
         type: 'wholeWord',
         isInflected: regex,
         deinflect: () => deinflectedWord,
+        inflect: (text) => (text === deinflectedWord ? inflectedWord : null),
         conditionsIn,
         conditionsOut,
     };

@@ -352,5 +352,6 @@
     ["oppidum", "", "n", "n2s", 5, ["oppidum definition - town"], 26, ""],
     ["oppido", "oppidō", "adv", "adv", 5, ["oppido definition - very"], 27, ""],
     ["oppido", "", "", "", 1, [["oppidum", ["ablative"]]], 28, ""],
-    ["oppidorum", "", "", "", 1, [["oppidum", ["genitive plural"]]], 29, ""]
+    ["oppidorum", "", "", "", 1, [["oppidum", ["genitive plural"]]], 29, ""],
+    ["来る", "くる", "vk", "vk", 1, ["kuru definition"], 30, ""]
 ]
