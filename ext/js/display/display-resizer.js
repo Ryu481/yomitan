@@ -131,6 +131,7 @@ export class DisplayResizer {
         window.getSelection()?.removeAllRanges();
 
         const {clientX: x, clientY: y} = e;
+        /** @type {import('core').TokenObject} */
         const token = {};
         this._token = token;
         this._startOffset = {x, y};
@@ -140,7 +141,7 @@ export class DisplayResizer {
         this._eventListeners.addEventListener(window, 'mousemove', this._onFrameResizerMouseMove.bind(this), false);
         this._eventListeners.addEventListener(window, 'mouseleave', this._onFrameResizerWindowBlur.bind(this), false);
 
-        this._eventListeners.addEventListener(window, 'selectstart', (event) => {
+        this._eventListeners.addEventListener(window, 'selectstart', (/** @type {Event} */ event) => {
             event.preventDefault();
             window.getSelection()?.removeAllRanges();
         }, true);
@@ -160,8 +161,8 @@ export class DisplayResizer {
         document.documentElement.dataset.resizing = 'true';
         document.body.classList.add('popup-resizing');
         window.getSelection()?.removeAllRanges();
-        
-        
+
+
         if (this._token !== null) { return; }
 
         const {clientX: x, clientY: y, identifier} = e.changedTouches[0];
@@ -212,7 +213,7 @@ export class DisplayResizer {
         document.body.classList.remove('popup-resizing');
 
         const contentScroll = document.querySelector('#content-scroll');
-        if (contentScroll !== null) {
+        if (contentScroll instanceof HTMLElement) {
             contentScroll.style.overflowX = '';
             contentScroll.style.overflowY = '';
             contentScroll.classList.add('scrollbar');

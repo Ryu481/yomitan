@@ -77,8 +77,8 @@ export class FrameEndpoint {
 
         // Ignore Safari-specific postMessage protocols handled elsewhere.
         if (
-            data.yomitanSafariCrossFrameRpc === true ||
-            data.yomitanSafariPopupRpc === true
+            /** @type {import('core').SerializableObject} */ (data).yomitanSafariCrossFrameRpc === true ||
+            /** @type {import('core').SerializableObject} */ (data).yomitanSafariPopupRpc === true
         ) {
             return;
         }

@@ -18,10 +18,17 @@
 
 (async () => {
     const loadKey = Symbol.for('yomitan.contentScriptMainLoaded');
-    if (globalThis[loadKey] === true) { return; }
-    globalThis[loadKey] = true;
+    if (Reflect.get(globalThis, loadKey) === true) { return; }
+    Reflect.set(globalThis, loadKey, true);
 
-    const src = chrome.runtime.getURL('js/app/content-script-main.js');
-    // eslint-disable-next-line no-unsanitized/method
-    await import(src);
+    try {
+        const src = chrome.runtime.getURL('js/app/content-script-main.js');
+        // eslint-disable-next-line no-unsanitized/method
+        await import(src);
+    } catch (error) {
+        // A failed import must not leave this frame permanently marked as loaded.
+        Reflect.set(globalThis, loadKey, false);
+        // eslint-disable-next-line no-console
+        console.warn('Yomitan content script could not be loaded', error);
+    }
 })();

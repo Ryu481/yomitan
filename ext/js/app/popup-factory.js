@@ -70,6 +70,18 @@ export class PopupFactory {
     }
 
     /**
+     * Checks whether a message came from an iframe hosted by this factory.
+     * @param {MessageEventSource} source
+     * @returns {boolean}
+     */
+    isPopupFrame(source) {
+        for (const popup of this._popups.values()) {
+            if (popup instanceof Popup && popup.frameContentWindow === source) { return true; }
+        }
+        return false;
+    }
+
+    /**
      * Gets or creates a popup based on a set of parameters
      * @param {import('popup-factory').GetOrCreatePopupDetails} details Details about how to acquire the popup.
      * @returns {Promise<import('popup').PopupAny>}
@@ -130,7 +142,10 @@ export class PopupFactory {
             );
             this._popups.set(id, popup);
             return popup;
-        } else if (frameId === currentFrameId) {
+        } else if (frameId === currentFrameId && !(parentPopupId !== null && isSafariPopupIframeContext())) {
+            // Safari can report the owner's frame ID for an extension iframe.
+            // A nested popup must still be created by the parent factory so that
+            // its ID exists where the Safari parent-frame RPC actions are sent.
             // New unique id
             if (id === null) {
                 id = generateId(16);

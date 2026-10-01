@@ -40,3 +40,8 @@ export type LoadMediaRequest = {
     /** The canvas to draw the image onto. */
     canvas: OffscreenCanvas;
 };
+
+export type DirectMediaData = {
+    data: import('./dictionary-database').MediaDataStringContent | null;
+    url: string | null;
+};

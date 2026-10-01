@@ -18,6 +18,9 @@
 
 import {EventDispatcher} from '../core/event-dispatcher.js';
 
+/**
+ * @returns {boolean}
+ */
 function isSafariWebExtension() {
     try {
         return chrome.runtime.getURL('/').startsWith('safari-web-extension://');

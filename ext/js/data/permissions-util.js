@@ -136,7 +136,7 @@ export function getRequiredPermissionsForAnkiFieldValue(fieldValue) {
  */
 export function hasRequiredPermissionsForOptions(permissions, options) {
     if (isSafariWebExtension()) {
-            return true;
+        return true;
     }
     const permissionsSet = new Set(permissions.permissions);
 
@@ -165,6 +165,7 @@ export function hasRequiredPermissionsForOptions(permissions, options) {
     return true;
 }
 
+/** @returns {boolean} */
 function isSafariWebExtension() {
     try {
         return chrome.runtime.getURL('/').startsWith('safari-web-extension://');

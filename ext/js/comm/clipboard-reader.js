@@ -19,6 +19,15 @@
 import {getFileExtensionFromImageMediaType} from '../media/media-util.js';
 
 /**
+ * @typedef {object} ClipboardResponse
+ * @property {boolean} [ok]
+ * @property {string} [text]
+ * @property {number} [version]
+ * @property {string} [error]
+ * @property {string} [message]
+ */
+
+/**
  * Class which can read text and images from the clipboard.
  */
 export class ClipboardReader {
@@ -76,14 +85,14 @@ export class ClipboardReader {
               being an extension with clipboard permissions. It effectively asks for the
               non-extension permission for clipboard access.
         */
-        
+
         if (this._isSafariWebExtension()) {
             const text = await this._getSafariNativeClipboardText();
             if (typeof text === 'string') {
                 return text;
             }
         }
-        
+
         if (this._isFirefox() && !useRichText) {
             try {
                 return await navigator.clipboard.readText();
@@ -173,11 +182,11 @@ export class ClipboardReader {
     _isFirefox() {
         return (this._browser === 'firefox' || this._browser === 'firefox-mobile');
     }
-    
+
 
     /**
-    * @returns {boolean}
-    */
+     * @returns {boolean}
+     */
     _isSafariWebExtension() {
         try {
             return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
@@ -186,6 +195,9 @@ export class ClipboardReader {
         }
     }
 
+    /**
+     * @returns {Promise<?string>}
+     */
     async _getSafariNativeClipboardText() {
         const response = await this._sendSafariNativeMessageSafely({action: 'getClipboard'});
         if (
@@ -199,19 +211,23 @@ export class ClipboardReader {
         return null;
     }
 
+    /**
+     * @param {{action: string}} message
+     * @returns {Promise<?ClipboardResponse>}
+     */
     _sendSafariNativeMessageSafely(message) {
         return new Promise((resolve) => {
             try {
                 chrome.runtime.sendNativeMessage(
                     'ryu67.yomitan.safari.extension',
                     message,
-                    (response) => {
+                    (/** @type {unknown} */ response) => {
                         const e = chrome.runtime.lastError;
                         if (e) {
                             resolve(null);
                             return;
                         }
-                        resolve(typeof response === 'object' && response !== null ? response : null);
+                        resolve(typeof response === 'object' && response !== null ? /** @type {ClipboardResponse} */ (response) : null);
                     },
                 );
             } catch (e) {
@@ -221,19 +237,19 @@ export class ClipboardReader {
     }
 
     /**
-    * @param {{action: string}} message
-    * @returns {Promise<?{ok?: boolean, text?: string, version?: number, error?: string, message?: string}>}
-    */
+     * @param {{action: string}} message
+     * @returns {Promise<?ClipboardResponse>}
+     */
     _sendMessageSafely(message) {
         return new Promise((resolve) => {
             try {
-                chrome.runtime.sendMessage(message, (response) => {
+                chrome.runtime.sendMessage(message, (/** @type {unknown} */ response) => {
                     const e = chrome.runtime.lastError;
                     if (e) {
                         resolve(null);
                         return;
                     }
-                    resolve(typeof response === 'object' && response !== null ? response : null);
+                    resolve(typeof response === 'object' && response !== null ? /** @type {ClipboardResponse} */ (response) : null);
                 });
             } catch (e) {
                 resolve(null);

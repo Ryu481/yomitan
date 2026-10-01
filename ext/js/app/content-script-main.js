@@ -31,6 +31,7 @@ await Application.main(false, async (application) => {
 
     prepareSafariCrossFrameRpcResponder(application, {popupFactory});
 
+    const {browser} = await application.api.getEnvironmentInfo();
     const frontend = new Frontend({
         application,
         popupFactory,
@@ -43,6 +44,7 @@ await Application.main(false, async (application) => {
         allowRootFramePopupProxy: true,
         childrenSupported: true,
         hotkeyHandler,
+        browser,
     });
 
     await frontend.prepare();

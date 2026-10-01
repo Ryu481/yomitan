@@ -111,7 +111,7 @@ export class Popup extends EventDispatcher {
 
         /** @type {?number} */
         this._frameSizeContentScale = null;
-        /** @type {?FrameClient} */
+        /** @type {FrameClient | SafariFrameClient | null} */
         this._frameClient = null;
         /** @type {HTMLIFrameElement} */
         this._frame = document.createElement('iframe');
@@ -570,9 +570,7 @@ export class Popup extends EventDispatcher {
             }
         };
 
-        const useSafariFrameTransport =
-            /Safari/.test(navigator.userAgent) &&
-            !/Chrome|Chromium|Edg|Firefox/.test(navigator.userAgent);
+        const useSafariFrameTransport = this._targetOrigin.startsWith('safari-web-extension://');
 
         const frameClient = useSafariFrameTransport ?
             new SafariFrameClient() :
@@ -612,6 +610,7 @@ export class Popup extends EventDispatcher {
      * @returns {void}
      */
     _resetFrame() {
+        if (this._frameClient instanceof SafariFrameClient) { this._frameClient.disconnect(); }
         const parent = this._container.parentNode;
         if (parent !== null) {
             parent.removeChild(this._container);
@@ -820,16 +819,17 @@ export class Popup extends EventDispatcher {
 
         /** @type {import('display').DirectApiMessage<TName>} */
         const message = {action, params};
-        const wrappedMessage = this._frameClient.createMessage(message);
-        if (typeof this._frameClient.invoke === 'function') {
-            return await this._frameClient.invoke('displayPopupMessage1', wrappedMessage);
+        if (this._frameClient instanceof SafariFrameClient) {
+            const wrappedMessage = this._frameClient.createMessage(message);
+            return /** @type {import('display').DirectApiReturn<TName>} */ (await this._frameClient.invoke('displayPopupMessage1', wrappedMessage));
         }
 
+        const wrappedMessage = this._frameClient.createMessage(/** @type {import('display').DirectApiMessageAny} */ (message));
         return await this._application.crossFrame.invoke(
             this._frameClient.frameId,
             'displayPopupMessage1',
-            wrappedMessage,
-            );
+            /** @type {import('display').DirectApiFrameClientMessageAny} */ (wrappedMessage),
+        );
     }
 
     /**

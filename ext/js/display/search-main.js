@@ -31,9 +31,8 @@ import {SearchPersistentStateController} from './search-persistent-state-control
 import {prepareSafariCrossFrameRpcResponder} from '../comm/safari-cross-frame-rpc.js';
 
 await Application.main(true, async (application) => {
-	
-	prepareSafariCrossFrameRpcResponder(application);
-    
+    prepareSafariCrossFrameRpcResponder(application);
+
     const documentFocusController = new DocumentFocusController('#search-textbox');
     documentFocusController.prepare();
 

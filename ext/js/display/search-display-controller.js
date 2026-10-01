@@ -563,14 +563,17 @@ export class SearchDisplayController {
         };
         await this._display.application.api.modifySettings([modification], 'search');
     }
-    
+
+    /**
+     * @returns {boolean}
+     */
     _isSafariWebExtension() {
-            try {
-                return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
-            } catch (e) {
-                return false;
-            }
+        try {
+            return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        } catch (e) {
+            return false;
         }
+    }
 
     /** */
     _updateClipboardMonitorEnabled() {

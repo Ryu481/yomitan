@@ -16,6 +16,32 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {toError} from '../core/to-error.js';
+import {deferPromise, generateId} from '../core/utilities.js';
+
+/**
+ * @typedef {{
+ *   yomitanSafariCrossFrameRpc: true,
+ *   type: 'invoke',
+ *   clientId: string,
+ *   id: string,
+ *   action: import('cross-frame-api').ApiNames,
+ *   params: import('cross-frame-api').ApiParams<import('cross-frame-api').ApiNames>,
+ * }} SafariInvokeMessage
+ */
+
+/**
+ * @typedef {{
+ *   yomitanSafariCrossFrameRpc: true,
+ *   type: 'result',
+ *   clientId: string,
+ *   id: string,
+ *   result?: unknown,
+ *   error?: ?string,
+ * }} SafariResultMessage
+ */
+
+/** @type {Map<string, keyof import('../app/popup-factory.js').PopupFactory>} */
 const popupFactoryActionMethods = new Map([
     ['popupFactoryGetOrCreatePopup', '_onApiGetOrCreatePopup'],
     ['popupFactorySetOptionsContext', '_onApiSetOptionsContext'],
@@ -38,29 +64,34 @@ const popupFactoryActionMethods = new Map([
 /**
  * @param {import('../application.js').Application} application
  * @param {{
- *   popupFactory?: ?object
- * }|?object|null} options
+ *   popupFactory?: ?import('../app/popup-factory.js').PopupFactory
+ * }|import('../app/popup-factory.js').PopupFactory|null} options
  * @returns {() => void}
  */
 export function prepareSafariCrossFrameRpcResponder(application, options = null) {
+    /** @type {?import('../app/popup-factory.js').PopupFactory} */
     let popupFactory = null;
 
     if (options !== null && typeof options === 'object') {
-        if (Object.hasOwn(options, 'popupFactory')) {
+        if ('popupFactory' in options) {
             ({popupFactory = null} = options);
         } else {
             // Backwards compatibility:
             // allow prepareSafariCrossFrameRpcResponder(application, popupFactory)
-            popupFactory = options;
+            popupFactory = /** @type {import('../app/popup-factory.js').PopupFactory} */ (options);
         }
     }
 
+    /** @param {MessageEvent<SafariInvokeMessage>} event */
     const onMessage = async (event) => {
         const data = event.data;
         if (data?.yomitanSafariCrossFrameRpc !== true || data?.type !== 'invoke') { return; }
 
-        const source = event.source;
+        const source = /** @type {?Window} */ (event.source);
         if (source === null) { return; }
+        // A document may have more than one PopupFactory. Only the factory
+        // hosting this iframe may answer, otherwise its popup IDs are unknown.
+        if (popupFactory !== null && !popupFactory.isPopupFrame(source)) { return; }
 
         let result;
         let error = null;
@@ -70,22 +101,29 @@ export function prepareSafariCrossFrameRpcResponder(application, options = null)
                 application,
                 popupFactory,
                 data.action,
-                data.params
+                data.params,
             );
         } catch (e) {
-            error = `${e?.message ?? e}`;
+            error = toError(e).message;
         }
 
         const targetOrigin = getPostMessageTargetOrigin(event);
 
-        source.postMessage({
-            yomitanSafariCrossFrameRpc: true,
-            type: 'result',
-            clientId: data.clientId,
-            id: data.id,
-            result,
-            error,
-        }, targetOrigin);
+        try {
+            source.postMessage({
+                yomitanSafariCrossFrameRpc: true,
+                type: 'result',
+                clientId: data.clientId,
+                id: data.id,
+                result,
+                error,
+            }, targetOrigin);
+        } catch (e) {
+            // The iframe can navigate or be removed while its action is being
+            // handled. There is no longer a recipient for this result.
+            if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'InvalidStateError')) { return; }
+            throw e;
+        }
     };
 
     window.addEventListener('message', onMessage, false);
@@ -104,15 +142,17 @@ function getPostMessageTargetOrigin(event) {
         typeof event.origin === 'string' &&
         event.origin.length > 0 &&
         event.origin !== 'null'
-    ) ? event.origin : '*';
+    ) ?
+event.origin :
+'*';
 }
 
 /**
  * @param {import('../application.js').Application} application
- * @param {?object} popupFactory
- * @param {string} action
- * @param {*} params
- * @returns {Promise<*>}
+ * @param {?import('../app/popup-factory.js').PopupFactory} popupFactory
+ * @param {import('cross-frame-api').ApiNames} action
+ * @param {import('cross-frame-api').ApiParams<import('cross-frame-api').ApiNames>} params
+ * @returns {Promise<unknown>}
  */
 async function invokeSafariCrossFrameAction(application, popupFactory, action, params) {
     const methodName = popupFactoryActionMethods.get(action);
@@ -124,22 +164,29 @@ async function invokeSafariCrossFrameAction(application, popupFactory, action, p
             throw new Error(`Unsupported Safari popup factory action: ${action}`);
         }
 
-        return await method.call(popupFactory, params);
+        return await /** @type {(params: unknown) => unknown} */ (method).call(popupFactory, params);
     }
 
     return await application.crossFrame.invokeLocal(action, params);
 }
 
+/** @returns {boolean} */
 export function isSafariPopupIframeContext() {
     try {
-        return window.parent !== window && location.pathname.endsWith('/popup.html');
+        return (
+            window.parent !== window &&
+            location.protocol === 'safari-web-extension:' &&
+            location.pathname.endsWith('/popup.html')
+        );
     } catch {
         return false;
     }
 }
 
 let nextId = 0;
-const clientId = crypto.randomUUID();
+/** @type {?string} */
+let clientId = null;
+/** @type {Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timeout: ReturnType<typeof setTimeout>}>} */
 const pending = new Map();
 
 /**
@@ -147,22 +194,27 @@ const pending = new Map();
  *
  * This is used from popup.html iframe contexts where Safari's normal extension
  * cross-frame port communication is unreliable.
- *
- * @param {string} action
- * @param {*} params
- * @returns {Promise<*>}
+ * @template {import('cross-frame-api').ApiNames} TName
+ * @param {TName} action
+ * @param {import('cross-frame-api').ApiParams<TName>} params
+ * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
  */
 export function invokeSafariParentFrame(action, params) {
+    if (clientId === null) {
+        clientId = generateId(16);
+        window.addEventListener('message', onParentFrameMessage, false);
+    }
     const id = `${clientId}:${++nextId}`;
 
-    return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            pending.delete(id);
-            reject(new Error(`Safari parent-frame RPC timed out: ${action}`));
-        }, 10000);
+    const {promise, resolve, reject} = deferPromise();
+    const timeout = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`Safari parent-frame RPC timed out: ${action}`));
+    }, 10000);
 
-        pending.set(id, {resolve, reject, timeout});
+    pending.set(id, {resolve, reject, timeout});
 
+    try {
         window.parent.postMessage({
             yomitanSafariCrossFrameRpc: true,
             type: 'invoke',
@@ -171,10 +223,16 @@ export function invokeSafariParentFrame(action, params) {
             action,
             params,
         }, '*');
-    });
+    } catch (e) {
+        pending.delete(id);
+        clearTimeout(timeout);
+        reject(toError(e));
+    }
+    return /** @type {Promise<import('cross-frame-api').ApiReturn<TName>>} */ (promise);
 }
 
-window.addEventListener('message', (event) => {
+/** @param {MessageEvent<SafariResultMessage>} event */
+function onParentFrameMessage(event) {
     const data = event.data;
     if (data?.yomitanSafariCrossFrameRpc !== true || data?.type !== 'result') { return; }
     if (event.source !== window.parent) { return; }
@@ -191,4 +249,4 @@ window.addEventListener('message', (event) => {
     } else {
         item.resolve(data.result);
     }
-}, false);
+}

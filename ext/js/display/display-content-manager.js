@@ -17,6 +17,7 @@
  */
 
 import {EventListenerCollection} from '../core/event-listener-collection.js';
+import {log} from '../core/log.js';
 import {base64ToArrayBuffer} from '../data/array-buffer-util.js';
 
 /**
@@ -36,8 +37,11 @@ export class DisplayContentManager {
         this._eventListeners = new EventListenerCollection();
         /** @type {import('display-content-manager').LoadMediaRequest[]} */
         this._loadMediaRequests = [];
-        this._isSafari = chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        /** @type {boolean} */
+        this._isSafari = typeof chrome !== 'undefined' && chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        /** @type {{onUnload: ?(() => void), loaded: boolean}[]} */
         this._loadMediaData = [];
+        /** @type {Map<string, Map<string, Promise<import('display-content-manager').DirectMediaData>>>} */
         this._mediaCache = new Map();
     }
 
@@ -50,34 +54,39 @@ export class DisplayContentManager {
      * @param {string} path
      * @param {string} dictionary
      * @param {OffscreenCanvas|((url: string) => void)} canvasOrOnLoad
-     * @param {?Function} onUnload
+     * @param {?(() => void)} [onUnload]
      */
     loadMedia(path, dictionary, canvasOrOnLoad, onUnload = null) {
-        if (this._supportsOffscreenCanvasMediaLoading()) {
-            this._loadMediaRequests.push({
-                path,
-                dictionary,
-                canvas: canvasOrOnLoad,
-            });
+        if (typeof canvasOrOnLoad !== 'function') {
+            if (this._supportsOffscreenCanvasMediaLoading()) {
+                this._loadMediaRequests.push({path, dictionary, canvas: canvasOrOnLoad});
+            }
             return;
         }
 
-        if (typeof canvasOrOnLoad !== 'function') { return; }
-
-        void this._loadMediaDirect(path, dictionary, canvasOrOnLoad, onUnload);
+        void this._loadMediaDirect(path, dictionary, canvasOrOnLoad, onUnload).catch((error) => log.error(error));
     }
-    
+
+    /** @returns {boolean} */
     supportsOffscreenCanvasMediaLoading() {
         return this._supportsOffscreenCanvasMediaLoading();
     }
 
+    /** @returns {boolean} */
     _supportsOffscreenCanvasMediaLoading() {
         return !this._isSafari &&
-            typeof OffscreenCanvas !== 'undefined' &&
-            typeof createImageBitmap !== 'undefined' &&
-            typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function';
+        typeof OffscreenCanvas !== 'undefined' &&
+        typeof createImageBitmap !== 'undefined' &&
+        typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function';
     }
-    
+
+    /**
+     * @param {string} path
+     * @param {string} dictionary
+     * @param {(url: string) => void} onLoad
+     * @param {?(() => void)} onUnload
+     * @returns {Promise<void>}
+     */
     async _loadMediaDirect(path, dictionary, onLoad, onUnload) {
         const token = this._token;
         const data = {onUnload, loaded: false};
@@ -90,6 +99,11 @@ export class DisplayContentManager {
         data.loaded = true;
     }
 
+    /**
+     * @param {string} path
+     * @param {string} dictionary
+     * @returns {Promise<import('display-content-manager').DirectMediaData>}
+     */
     async _getMediaDirect(path, dictionary) {
         let dictionaryCache = this._mediaCache.get(dictionary);
         if (typeof dictionaryCache === 'undefined') {
@@ -97,29 +111,30 @@ export class DisplayContentManager {
             this._mediaCache.set(dictionary, dictionaryCache);
         }
 
-        let cachedData = dictionaryCache.get(path);
-        if (typeof cachedData === 'undefined') {
-            cachedData = {promise: null, data: null, url: null};
-            dictionaryCache.set(path, cachedData);
-            cachedData.promise = this._getMediaDataDirect(path, dictionary, cachedData);
+        let promise = dictionaryCache.get(path);
+        if (typeof promise === 'undefined') {
+            promise = this._getMediaDataDirect(path, dictionary);
+            dictionaryCache.set(path, promise);
         }
 
-        return await cachedData.promise;
+        return await promise;
     }
 
-    async _getMediaDataDirect(path, dictionary, cachedData) {
+    /**
+     * @param {string} path
+     * @param {string} dictionary
+     * @returns {Promise<import('display-content-manager').DirectMediaData>}
+     */
+    async _getMediaDataDirect(path, dictionary) {
         const [data] = await this._display.application.api.getMedia([{path, dictionary}]);
 
-        if (data === null) {
-            return cachedData;
+        if (data === null || typeof data === 'undefined') {
+            return {data: null, url: null};
         }
 
         const buffer = base64ToArrayBuffer(data.content);
         const blob = new Blob([buffer], {type: data.mediaType});
-        cachedData.data = data;
-        cachedData.url = URL.createObjectURL(blob);
-
-        return cachedData;
+        return {data, url: URL.createObjectURL(blob)};
     }
 
     /**
@@ -131,7 +146,7 @@ export class DisplayContentManager {
         this._eventListeners.removeAllEventListeners();
 
         this._loadMediaRequests = [];
-        
+
         for (const {onUnload, loaded} of this._loadMediaData) {
             if (loaded && typeof onUnload === 'function') {
                 onUnload();
@@ -159,7 +174,7 @@ export class DisplayContentManager {
      * Execute media requests
      */
     async executeMediaRequests() {
-        await this._display.application.api.drawMedia(
+        this._display.application.api.drawMedia(
             this._loadMediaRequests,
             this._loadMediaRequests.map(({canvas}) => canvas),
         );

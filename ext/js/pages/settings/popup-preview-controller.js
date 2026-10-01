@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {log} from '../../core/log.js';
+import {toError} from '../../core/to-error.js';
 import {querySelectorNotNull} from '../../dom/query-selector.js';
 
 export class PopupPreviewController {
@@ -35,7 +37,9 @@ export class PopupPreviewController {
         this._customOuterCss = querySelectorNotNull(document, '#custom-popup-outer-css');
         /** @type {HTMLElement} */
         this._previewFrameContainer = querySelectorNotNull(document, '.preview-frame-container');
+        /** @type {number} */
         this._invokeId = 0;
+        /** @type {Map<string, {resolve: (value: void) => void, reject: (reason: Error) => void, timeout: import('core').Timeout}>} */
         this._pendingInvokes = new Map();
     }
 
@@ -48,9 +52,10 @@ export class PopupPreviewController {
         this._customOuterCss.addEventListener('input', this._onCustomOuterCssChange.bind(this), false);
         this._customOuterCss.addEventListener('settingChanged', this._onCustomOuterCssChange.bind(this), false);
         this._frame.addEventListener('load', this._onFrameLoad.bind(this), false);
-        this._settingsController.on('optionsContextChanged', this._onOptionsContextChange.bind(this));
+        const onOptionsContextChange = () => { void this._onOptionsContextChange().catch((error) => log.error(error)); };
+        this._settingsController.on('optionsContextChanged', onOptionsContextChange);
         this._settingsController.on('optionsChanged', this._onOptionsChanged.bind(this));
-        this._settingsController.on('dictionaryEnabled', this._onOptionsContextChange.bind(this));
+        this._settingsController.on('dictionaryEnabled', onOptionsContextChange);
         const languageSelect = querySelectorNotNull(document, '#language-select');
         languageSelect.addEventListener(
             /** @type {string} */ ('settingChanged'),
@@ -59,14 +64,18 @@ export class PopupPreviewController {
         );
 
 
-        this._frame.src = '/popup-preview.html';
+        this._frame.src = chrome.runtime.getURL('/popup-preview.html');
         window.addEventListener('message', this._onFrameMessage.bind(this), false);
     }
 
     // Private
-    
+
+    /**
+     * @param {MessageEvent<{id: string, result?: void, error?: string}>} event
+     */
     _onFrameMessage(event) {
         if (event.origin.toLowerCase() !== this._targetOrigin.toLowerCase()) { return; }
+        if (event.source !== this._frame.contentWindow) { return; }
 
         const {data} = event;
         if (typeof data !== 'object' || data === null) { return; }
@@ -89,7 +98,7 @@ export class PopupPreviewController {
 
     /** */
     _onFrameLoad() {
-        this._onOptionsContextChange();
+        void this._onOptionsContextChange().catch((error) => log.error(error));
         this._onCustomCssChange();
         this._onCustomOuterCssChange();
     }
@@ -97,13 +106,13 @@ export class PopupPreviewController {
     /** */
     _onCustomCssChange() {
         const css = /** @type {HTMLTextAreaElement} */ (this._customCss).value;
-        this._invoke('setCustomCss', {css});
+        void this._invoke('setCustomCss', {css}).catch((error) => log.error(error));
     }
 
     /** */
     _onCustomOuterCssChange() {
         const css = /** @type {HTMLTextAreaElement} */ (this._customOuterCss).value;
-        this._invoke('setCustomOuterCss', {css});
+        void this._invoke('setCustomOuterCss', {css}).catch((error) => log.error(error));
     }
 
     /** */
@@ -122,7 +131,7 @@ export class PopupPreviewController {
      * @param {import('settings-controller').EventArgument<'optionsChanged'>} details
      */
     _onOptionsChanged({options}) {
-        this._invoke('setLanguageExampleText', {language: options.general.language});
+        void this._invoke('setLanguageExampleText', {language: options.general.language}).catch((error) => log.error(error));
     }
 
     /**
@@ -131,13 +140,14 @@ export class PopupPreviewController {
     _onLanguageSelectChanged(settingChangedEvent) {
         const {value} = settingChangedEvent.detail;
         if (typeof value !== 'string') { return; }
-        this._invoke('setLanguageExampleText', {language: value});
+        void this._invoke('setLanguageExampleText', {language: value}).catch((error) => log.error(error));
     }
 
     /**
      * @template {import('popup-preview-frame').ApiNames} TName
      * @param {TName} action
      * @param {import('popup-preview-frame').ApiParams<TName>} params
+     * @returns {Promise<void>}
      */
     _invoke(action, params) {
         if (this._frame === null || this._frame.contentWindow === null) {
@@ -147,17 +157,24 @@ export class PopupPreviewController {
         const id = `popup-preview-${++this._invokeId}`;
         const contentWindow = this._frame.contentWindow;
 
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this._pendingInvokes.delete(id);
+                reject(new Error(`Popup preview RPC timed out: ${action}`));
             }, 2000);
 
-            this._pendingInvokes.set(id, {resolve, timeout});
+            this._pendingInvokes.set(id, {resolve, reject, timeout});
 
-            contentWindow.postMessage(
-                {action, params, id},
-                this._targetOrigin,
-            );
+            try {
+                contentWindow.postMessage(
+                    {action, params, id},
+                    this._targetOrigin,
+                );
+            } catch (e) {
+                this._pendingInvokes.delete(id);
+                clearTimeout(timeout);
+                reject(toError(e));
+            }
         });
     }
 }

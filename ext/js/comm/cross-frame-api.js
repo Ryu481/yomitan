@@ -409,7 +409,13 @@ export class CrossFrameAPI {
         const commPort = await this._getOrCreateCommPort(targetTabId, targetFrameId);
         return await commPort.invoke(action, params, this._ackTimeout, this._responseTimeout);
     }
-    
+
+    /**
+     * @template {import('cross-frame-api').ApiNames} TName
+     * @param {TName} action
+     * @param {import('cross-frame-api').ApiParams<TName>} params
+     * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
+     */
     invokeLocal(action, params) {
         return new Promise((resolve, reject) => {
             invokeApiMapHandler(
@@ -421,10 +427,10 @@ export class CrossFrameAPI {
                     if (typeof response.error !== 'undefined') {
                         reject(ExtensionError.deserialize(response.error));
                     } else {
-                        resolve(response.result);
+                        resolve(/** @type {import('cross-frame-api').ApiReturn<TName>} */ (response.result));
                     }
                 },
-                () => reject(new Error(`Unknown action: ${action}`))
+                () => reject(new Error(`Unknown action: ${action}`)),
             );
         });
     }

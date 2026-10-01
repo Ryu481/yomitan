@@ -20,6 +20,8 @@ import {Frontend} from '../../app/frontend.js';
 import {ThemeController} from '../../app/theme-controller.js';
 import {createApiMap, invokeApiMapHandler} from '../../core/api-map.js';
 import {EventListenerCollection} from '../../core/event-listener-collection.js';
+import {ExtensionError} from '../../core/extension-error.js';
+import {toError} from '../../core/to-error.js';
 import {querySelectorNotNull} from '../../dom/query-selector.js';
 import {TextSourceRange} from '../../dom/text-source-range.js';
 import {isComposing} from '../../language/ime-utilities.js';
@@ -167,29 +169,25 @@ export class PopupPreviewFrame {
     /**
      * @param {MessageEvent<import('popup-preview-frame.js').ApiMessageAny>} event
      */
-    async _onMessage(event) {
+    _onMessage(event) {
         if (event.origin.toLowerCase() !== this._targetOrigin.toLowerCase()) { return; }
+        const source = window.parent;
+        if (event.source !== source) { return; }
 
         const {data} = event;
         if (typeof data !== 'object' || data === null) { return; }
 
         const {action, params, id} = data;
-        const handler = this._windowMessageHandlers.get(action);
-        if (typeof handler === 'undefined') { return; }
-
-        try {
-            const result = await handler(params);
-            if (typeof id === 'string') {
-                event.source?.postMessage({id, result}, event.origin);
+        invokeApiMapHandler(this._windowMessageHandlers, action, params, [], (response) => {
+            if (typeof id !== 'string') { return; }
+            const error = typeof response.error === 'undefined' ? void 0 : ExtensionError.deserialize(response.error).message;
+            try {
+                source.postMessage({id, result: response.result, error}, event.origin);
+            } catch (e) {
+                if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'InvalidStateError')) { return; }
+                throw toError(e);
             }
-        } catch (e) {
-            if (typeof id === 'string') {
-                event.source?.postMessage({
-                    id,
-                    error: e instanceof Error ? e.message : `${e}`,
-                }, event.origin);
-            }
-        }
+        });
     }
 
     /** */

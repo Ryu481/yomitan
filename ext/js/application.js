@@ -25,6 +25,7 @@ import {log} from './core/log.js';
 import {deferPromise} from './core/utilities.js';
 import {WebExtension} from './extension/web-extension.js';
 
+/** @returns {boolean} */
 function isSafariPopupIframeContext() {
     try {
         return (
@@ -37,8 +38,12 @@ function isSafariPopupIframeContext() {
     }
 }
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
 
@@ -234,14 +239,13 @@ export class Application extends EventDispatcher {
 
         const api = new API(webExtension, mediaDrawingWorker, backendPort);
         if (isSafariPopupIframeContext()) {
-            console.warn('[Application.main] Safari popup iframe: using non-blocking backend ready wait');
             try {
                 await Promise.race([
                     waitForBackendReady(webExtension),
-                    delay(1500)
+                    delay(1500),
                 ]);
             } catch (e) {
-                console.warn('[Application.main] Safari popup iframe: backend ready wait failed/ignored', e);
+                log.warn(e);
             }
         } else {
             await waitForBackendReady(webExtension);

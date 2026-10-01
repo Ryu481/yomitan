@@ -2897,15 +2897,15 @@ export class Backend {
         if (!optionsUI || !optionsUI.page) {
             throw new Error('Failed to find options_ui.page in manifest');
         }
-        
+
         const url = chrome.runtime.getURL(optionsUI.page);
 
         if (mode === 'existingOrNewTab') {
-            const tabs = await chrome.tabs.query({ url: url });
+            const tabs = await chrome.tabs.query({url: url});
 
             if (tabs.length > 0) {
-                await chrome.tabs.update(tabs[0].id, { active: true });
-                await chrome.windows.update(tabs[0].windowId, { focused: true });
+                await chrome.tabs.update(tabs[0].id, {active: true});
+                await chrome.windows.update(tabs[0].windowId, {focused: true});
             } else {
                 await chrome.runtime.openOptionsPage();
             }

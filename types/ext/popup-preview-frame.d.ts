@@ -74,6 +74,7 @@ export type ApiReturn<TName extends ApiNames> = BaseApiReturn<ApiSurface[TName]>
 type ApiMessage<TName extends ApiNames> = {
     action: TName;
     params: ApiParams<TName>;
+    id?: string;
 };
 
 export type ApiMessageAny = {[name in ApiNames]: ApiMessage<name>}[ApiNames];

@@ -18,7 +18,6 @@
 
 import {DisplayContentManager} from '../display/display-content-manager.js';
 import {getLanguageFromText} from '../language/text-utilities.js';
-import {AnkiTemplateRendererContentManager} from '../templates/anki-template-renderer-content-manager.js';
 
 export class StructuredContentGenerator {
     /**
@@ -149,7 +148,7 @@ export class StructuredContentGenerator {
 
         if (this._contentManager !== null) {
             const useCanvas = this._contentManager instanceof DisplayContentManager &&
-                this._contentManager.supportsOffscreenCanvasMediaLoading();
+            this._contentManager.supportsOffscreenCanvasMediaLoading();
             const image = useCanvas ?
                 /** @type {HTMLCanvasElement} */ (this._createElement('canvas', 'gloss-image')) :
                 /** @type {HTMLImageElement} */ (this._createElement('img', 'gloss-image'));
@@ -170,7 +169,7 @@ export class StructuredContentGenerator {
 
             imageContainer.appendChild(image);
 
-            if (useCanvas) {
+            if (useCanvas && this._contentManager instanceof DisplayContentManager) {
                 this._contentManager.loadMedia(
                     path,
                     dictionary,

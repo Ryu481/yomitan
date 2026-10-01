@@ -24,6 +24,7 @@ import {safePerformance} from '../core/safe-performance.js';
 import {clone} from '../core/utilities.js';
 import {anyNodeMatchesSelector, everyNodeMatchesSelector, getActiveModifiers, getActiveModifiersAndButtons, isPointInSelection} from '../dom/document-util.js';
 import {TextSourceElement} from '../dom/text-source-element.js';
+import {TextSourceRange} from '../dom/text-source-range.js';
 
 const SCAN_RESOLUTION_EXCLUDED_LANGUAGES = new Set(['ja', 'zh', 'yue', 'ko']);
 
@@ -482,11 +483,13 @@ export class TextScanner extends EventDispatcher {
                 if (isAltText) {
                     return;
                 }
-                const {imposterSourceElement, rangeStartOffset} = textSource;
-                if (imposterSourceElement instanceof HTMLTextAreaElement || imposterSourceElement instanceof HTMLInputElement) {
-                    const isFocused = imposterSourceElement === document.activeElement;
-                    if (!isFocused || imposterSourceElement.selectionStart !== rangeStartOffset) {
-                        return;
+                if (textSource instanceof TextSourceRange) {
+                    const {imposterSourceElement, rangeStartOffset} = textSource;
+                    if (imposterSourceElement instanceof HTMLTextAreaElement || imposterSourceElement instanceof HTMLInputElement) {
+                        const isFocused = imposterSourceElement === document.activeElement;
+                        if (!isFocused || imposterSourceElement.selectionStart !== rangeStartOffset) {
+                            return;
+                        }
                     }
                 }
             }

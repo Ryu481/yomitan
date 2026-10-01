@@ -22,7 +22,6 @@ import {log} from '../core/log.js';
 import {promiseAnimationFrame} from '../core/promise-animation-frame.js';
 import {safePerformance} from '../core/safe-performance.js';
 import {setProfile} from '../data/profiles-util.js';
-import {ThemeController} from './theme-controller.js';
 import {addFullscreenChangeEventListener, getFullscreenElement} from '../dom/document-util.js';
 import {TextSourceElement} from '../dom/text-source-element.js';
 import {TextSourceGenerator} from '../dom/text-source-generator.js';
@@ -30,7 +29,8 @@ import {TextSourceRange} from '../dom/text-source-range.js';
 import {TextScanner} from '../language/text-scanner.js';
 import {isSafariPopupIframeContext, invokeSafariParentFrame} from '../comm/safari-cross-frame-rpc.js';
 
-class SelectionTextSource {
+/** A text source for selections without a DOM range, such as Safari Live Text. */
+export class SelectionTextSource {
     /**
      * @param {string} content
      * @param {DOMRect[]} rects
@@ -44,7 +44,7 @@ class SelectionTextSource {
 
     /** @type {'element'} */
     get type() { return 'element'; }
-    
+
     /**
      * @returns {SelectionTextSource}
      */
@@ -53,13 +53,11 @@ class SelectionTextSource {
     }
 
     /**
-
-    /**
      * @returns {string}
      */
     text() { return this._content; }
-    
-    
+
+
     /**
      * @param {string} content
      * @returns {void}
@@ -69,17 +67,16 @@ class SelectionTextSource {
     }
 
     /**
-
-    /**
-     * @param {number} length
+     * @param {number} _length
      * @returns {number}
      */
-    setStartOffset(length) {
+    setStartOffset(_length) {
         return 0;
     }
 
     /**
      * @param {number} length
+     * @param {boolean} fromEnd
      * @returns {number}
      */
     setEndOffset(length, fromEnd = false) {
@@ -372,7 +369,7 @@ export class Frontend {
     }
 
     /**
-    * @param {{text?: string}=} params
+     * @param {{text?: string}=} params
      * @returns {void}
      */
     _onApiScanSelectedText(params = {}) {
@@ -484,7 +481,7 @@ export class Frontend {
     _onVisualViewportResize() {
         this._updateContentScale();
     }
-    
+
     /**
      * @param {MouseEvent} e
      * @returns {void}
@@ -495,12 +492,7 @@ export class Frontend {
         }
     }
 
-    /**
-
-    /**
-     * @param {import('text-scanner').EventArgument<'clear'>} details
-     * @returns {void}
-     */
+    /** @returns {void} */
     _onTextScannerClear() {
         this._clearSelection(false);
     }
@@ -655,8 +647,6 @@ export class Frontend {
         }
     }
 
-    /** */
-
     /**
      * @returns {Promise<void>}
      */
@@ -674,7 +664,6 @@ export class Frontend {
         const preventMiddleMouseOnTextHover = scanningOptions.preventMiddleMouse.onTextHover;
         const preventBackForwardOnPage = this._getPreventSecondaryMouseValueForPageType(scanningOptions.preventBackForward);
         const preventBackForwardOnTextHover = scanningOptions.preventBackForward.onTextHover;
-        const scanningInputs = scanningOptions.inputs;
         this._textScanner.language = options.general.language;
         this._textScanner.setOptions({
             inputs: scanningOptions.inputs,
@@ -725,46 +714,36 @@ export class Frontend {
 
         const currentPopup = this._popup;
 
-        let popupPromise;
+        /** @type {'default'|'window'|'iframe'|'proxy'} */
+        let popupType;
         if (
-                isSafariPopupFrame &&
-                this._parentFrameId !== null &&
-                this._parentPopupId !== null
-            ) {
-                popupPromise = this._popupCache.get('proxy');
-                if (typeof popupPromise === 'undefined') {
-                    popupPromise = this._getProxyPopup();
-                    this._popupCache.set('proxy', popupPromise);
-                }
-            } else if (usePopupWindow && this._canUseWindowPopup) {
-                popupPromise = this._popupCache.get('window');
-                if (typeof popupPromise === 'undefined') {
-                    popupPromise = this._getPopupWindow();
-                    this._popupCache.set('window', popupPromise);
-            }
+            isSafariPopupFrame &&
+            this._parentFrameId !== null &&
+            this._parentPopupId !== null
+        ) {
+            popupType = 'proxy';
+        } else if (usePopupWindow && this._canUseWindowPopup) {
+            popupType = 'window';
         } else if (
             isIframe &&
             showIframePopupsInRootFrame &&
             getFullscreenElement() === null &&
             this._allowRootFramePopupProxy
         ) {
-            popupPromise = this._popupCache.get('iframe');
-            if (typeof popupPromise === 'undefined') {
-                popupPromise = this._getIframeProxyPopup();
-                this._popupCache.set('iframe', popupPromise);
-            }
-        } else if (this._useProxyPopup) {
-            popupPromise = this._popupCache.get('proxy');
-            if (typeof popupPromise === 'undefined') {
-                popupPromise = this._getProxyPopup();
-                this._popupCache.set('proxy', popupPromise);
-            }
+            popupType = 'iframe';
         } else {
-            popupPromise = this._popupCache.get('default');
-            if (typeof popupPromise === 'undefined') {
-                popupPromise = this._getDefaultPopup();
-                this._popupCache.set('default', popupPromise);
+            popupType = this._useProxyPopup ? 'proxy' : 'default';
+        }
+
+        let popupPromise = this._popupCache.get(popupType);
+        if (typeof popupPromise === 'undefined') {
+            switch (popupType) {
+                case 'window': popupPromise = this._getPopupWindow(); break;
+                case 'iframe': popupPromise = this._getIframeProxyPopup(); break;
+                case 'proxy': popupPromise = this._getProxyPopup(); break;
+                case 'default': popupPromise = this._getDefaultPopup(); break;
             }
+            this._popupCache.set(popupType, popupPromise);
         }
 
         /**
@@ -1153,16 +1132,16 @@ export class Frontend {
      */
     async _scanSelectedText(allowEmptyRange, disallowExpandSelection, showEmpty = false, fallbackText = null) {
         safePerformance.mark('frontend:scanSelectedText:start');
-        
+
         this._textScanner.setCurrentTextSource(null);
-        
+
         const selection = window.getSelection();
         const selectionText = this._normalizeSelectionText(
             fallbackText !== null ? fallbackText : (selection !== null ? selection.toString() : ''),
         );
 
         const range = this._getFirstSelectionRange(allowEmptyRange);
-        
+
         const useSyntheticSource = (
             selectionText.length > 0 &&
             (fallbackText !== null || range === null || this._rangeHasNoRects(range))
@@ -1175,7 +1154,7 @@ export class Frontend {
             safePerformance.measure('frontend:scanSelectedText', 'frontend:scanSelectedText:start', 'frontend:scanSelectedText:end');
             return true;
         }
-        
+
         if (range === null) { return false; }
         const source = disallowExpandSelection ? TextSourceRange.createLazy(range) : TextSourceRange.create(range);
         await this._textScanner.search(source, {focus: true, restoreSelection: true}, showEmpty);
@@ -1183,7 +1162,7 @@ export class Frontend {
         safePerformance.measure('frontend:scanSelectedText', 'frontend:scanSelectedText:start', 'frontend:scanSelectedText:end');
         return true;
     }
-    
+
     /**
      * @param {string} text
      * @returns {string}
@@ -1191,7 +1170,7 @@ export class Frontend {
     _normalizeSelectionText(text) {
         return text.replace(/\s+/g, ' ').trim();
     }
-    
+
     /**
      * @param {Range} range
      * @returns {boolean}
@@ -1225,8 +1204,6 @@ export class Frontend {
         const {innerWidth, innerHeight} = window;
         return [new DOMRect(Math.max(0, innerWidth / 2), Math.max(0, innerHeight / 2), 1, 1)];
     }
-
-    /**
 
     /**
      * @param {boolean} allowEmptyRange

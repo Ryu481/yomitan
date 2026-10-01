@@ -17,5 +17,6 @@
 
 import type {TextSourceElement} from '../../ext/js/dom/text-source-element';
 import type {TextSourceRange} from '../../ext/js/dom/text-source-range';
+import type {SelectionTextSource} from '../../ext/js/app/frontend';
 
-export type TextSource = TextSourceRange | TextSourceElement;
+export type TextSource = TextSourceRange | TextSourceElement | SelectionTextSource;

@@ -26,7 +26,7 @@ import type {
     ApiParams as BaseApiParams,
     ApiNames as BaseApiNames,
     ApiMapInit as BaseApiMapInit,
-    ApiParamsAny as BaseApiParamsAny,
+    ApiReturnAny as BaseApiReturnAny,
     ApiHandler as BaseApiHandler,
     ApiReturn as BaseApiReturn,
 } from './api-map';
@@ -228,9 +228,9 @@ export type DirectApiReturn<TName extends DirectApiNames> = BaseApiReturn<Direct
 
 export type DirectApiMessageAny = {[name in DirectApiNames]: DirectApiMessage<name>}[DirectApiNames];
 
-export type DirectApiReturnAny = BaseApiParamsAny<DirectApiSurface>;
+export type DirectApiReturnAny = BaseApiReturnAny<DirectApiSurface>;
 
-type DirectApiMessage<TName extends DirectApiNames> = {
+export type DirectApiMessage<TName extends DirectApiNames> = {
     action: TName;
     params: DirectApiParams<TName>;
 };

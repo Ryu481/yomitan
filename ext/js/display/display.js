@@ -236,8 +236,14 @@ export class Display extends EventDispatcher {
     get application() {
         return this._application;
     }
-    
-    
+
+
+    /**
+     * @template {import('cross-frame-api').ApiNames} TName
+     * @param {TName} action
+     * @param {import('cross-frame-api').ApiParams<TName>} params
+     * @returns {Promise<import('cross-frame-api').ApiReturn<TName>>}
+     */
     async invokeParentFrame(action, params) {
         if (isSafariPopupIframeContext()) {
             return await invokeSafariParentFrame(action, params);
@@ -249,6 +255,17 @@ export class Display extends EventDispatcher {
         }
 
         return await this._application.crossFrame.invoke(this._parentFrameId, action, params);
+    }
+
+    /**
+     * @template {import('display').DirectApiNames} TName
+     * @param {import('display').DirectApiMessage<TName>} message
+     * @returns {Promise<import('display').DirectApiReturn<TName>>}
+     */
+    invokeDirectMessage(message) {
+        return /** @type {Promise<import('display').DirectApiReturn<TName>>} */ (
+            this._onDisplayPopupMessage2(/** @type {import('display').DirectApiMessageAny} */ (message))
+        );
     }
 
     /** @type {DisplayGenerator} */
@@ -347,9 +364,7 @@ export class Display extends EventDispatcher {
         this._dictionaryInfo = await this._application.api.getDictionaryInfo();
 
         // Prepare
-        if (isSafariPopupIframeContext()) {
-            console.warn('[Display.prepare] Safari popup iframe: skipping hotkeyHelpController.prepare');
-        } else {
+        if (!isSafariPopupIframeContext()) {
             await this._hotkeyHelpController.prepare(this._application.api);
         }
         await this._displayGenerator.prepare();
@@ -367,7 +382,7 @@ export class Display extends EventDispatcher {
             ['displayPopupMessage2', this._onDisplayPopupMessage2.bind(this)],
         ]);
         window.addEventListener('message', this._onWindowMessage.bind(this), false);
-        
+
         document.addEventListener('visibilitychange', this._onVisibilityChange.bind(this), false);
         window.addEventListener('pageshow', this._onPageShow.bind(this), false);
 
@@ -410,19 +425,22 @@ export class Display extends EventDispatcher {
             this._frameEndpoint.signal();
         }
     }
-    
+
+    /** */
     _onVisibilityChange() {
         if (document.visibilityState === 'visible') {
             this._forceSafariContentScrollReflow();
         }
     }
 
+    /** */
     _onPageShow() {
         this._forceSafariContentScrollReflow();
     }
-    
+
+    /** */
     _forceSafariContentScrollReflow() {
-        if (!chrome.runtime.getURL('/').startsWith('safari-web-extension://')) { return; }
+        if (typeof chrome === 'undefined' || !chrome.runtime.getURL('/').startsWith('safari-web-extension://')) { return; }
 
         const el = document.getElementById('content-scroll');
         if (el === null) { return; }
@@ -771,19 +789,20 @@ export class Display extends EventDispatcher {
     }
 
     /**
-     * @param {MessageEvent<import('display').WindowApiFrameClientMessageAny>} details
+     * @param {MessageEvent<import('display').WindowApiFrameClientMessageAny|{yomitanSafariPopupFrameClientMessage: true, data: import('display').WindowApiMessageAny}>} details
      */
-    _onWindowMessage({data}) {
+    _onWindowMessage({data, source}) {
+        /** @type {import('display').WindowApiMessageAny} */
         let data2;
         try {
-            if (
+            data2 = (
                 isSafariPopupIframeContext() &&
-                data?.yomitanSafariPopupFrameClientMessage === true
-            ) {
-                data2 = data.data;
-            } else {
-                data2 = this._authenticateMessageData(data);
-            }
+                source === window.parent &&
+                'yomitanSafariPopupFrameClientMessage' in data &&
+                data.yomitanSafariPopupFrameClientMessage === true ?
+                    data.data :
+                    this._authenticateMessageData(/** @type {import('display').WindowApiFrameClientMessageAny} */ (data))
+            );
         } catch (e) {
             return;
         }
@@ -1321,7 +1340,7 @@ export class Display extends EventDispatcher {
         data.popupCurrentIndicatorMode = `${options.general.popupCurrentIndicatorMode}`;
         data.popupActionBarVisibility = `${options.general.popupActionBarVisibility}`;
         data.popupActionBarLocation = `${options.general.popupActionBarLocation}`;
-        }
+    }
 
     /**
      * @returns {boolean}
