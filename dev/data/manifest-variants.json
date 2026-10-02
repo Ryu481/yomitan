@@ -381,6 +381,85 @@
                         "extension_pages"
                     ],
                     "value": "default-src 'self'; script-src 'self' 'unsafe-eval'; img-src blob: 'self'; style-src 'self' 'unsafe-inline'; media-src *; connect-src *"
+                },
+                {
+                    "action": "set",
+                    "path": [
+                        "manifest_version"
+                    ],
+                    "value": 2
+                },
+                {
+                    "action": "move",
+                    "path": [
+                        "action"
+                    ],
+                    "newPath": [
+                        "browser_action"
+                    ]
+                },
+                {
+                    "action": "set",
+                    "path": [
+                        "background",
+                        "persistent"
+                    ],
+                    "value": true
+                },
+                {
+                    "action": "remove",
+                    "path": [
+                        "permissions"
+                    ],
+                    "item": "declarativeNetRequest"
+                },
+                {
+                    "action": "remove",
+                    "path": [
+                        "permissions"
+                    ],
+                    "item": "scripting"
+                },
+                {
+                    "action": "add",
+                    "path": [
+                        "permissions"
+                    ],
+                    "items": [
+                        "<all_urls>"
+                    ]
+                },
+                {
+                    "action": "delete",
+                    "path": [
+                        "host_permissions"
+                    ]
+                },
+                {
+                    "action": "delete",
+                    "path": [
+                        "content_scripts",
+                        0,
+                        "match_origin_as_fallback"
+                    ]
+                },
+                {
+                    "action": "set",
+                    "path": [
+                        "web_accessible_resources"
+                    ],
+                    "value": [
+                        "popup.html",
+                        "js/*",
+                        "lib/resvg.wasm"
+                    ]
+                },
+                {
+                    "action": "set",
+                    "path": [
+                        "content_security_policy"
+                    ],
+                    "value": "default-src 'self'; script-src 'self' 'unsafe-eval'; img-src blob: 'self'; style-src 'self' 'unsafe-inline'; media-src *; connect-src *"
                 }
             ],
             "excludeFiles": [

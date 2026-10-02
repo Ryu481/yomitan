@@ -22,25 +22,7 @@ import {createApiMap, invokeApiMapHandler} from './core/api-map.js';
 import {EventDispatcher} from './core/event-dispatcher.js';
 import {ExtensionError} from './core/extension-error.js';
 import {log} from './core/log.js';
-import {deferPromise} from './core/utilities.js';
 import {WebExtension} from './extension/web-extension.js';
-
-function isSafariPopupIframeContext() {
-    try {
-        return (
-            window.parent !== window &&
-            location.pathname.endsWith('/popup.html') &&
-            /^safari-web-extension:\/\//i.test(location.href)
-        );
-    } catch {
-        return false;
-    }
-}
-
-function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 
 /**
  * @returns {boolean}
@@ -72,18 +54,43 @@ if (checkChromeNotAvailable()) {
  * @param {WebExtension} webExtension
  */
 async function waitForBackendReady(webExtension) {
-    const {promise, resolve} = /** @type {import('core').DeferredPromiseDetails<void>} */ (deferPromise());
-    /** @type {import('application').ApiMap} */
-    const apiMap = createApiMap([['applicationBackendReady', () => { resolve(); }]]);
-    /** @type {import('extension').ChromeRuntimeOnMessageCallback<import('application').ApiMessageAny>} */
-    const onMessage = ({action, params}, _sender, callback) => invokeApiMapHandler(apiMap, action, params, [], callback);
-    chrome.runtime.onMessage.addListener(onMessage);
+    // Backend._onMessageWrapper delays this request until backend preparation has
+    // completed, so receiving the response is itself the readiness signal.
+    await webExtension.sendMessagePromise({action: 'requestBackendReadySignal'});
+}
+
+/**
+ * Returns whether this extension build actually uses an MV3 background service worker.
+ * The presence of navigator.serviceWorker only describes browser capabilities and does
+ * not indicate how the extension background context is configured.
+ * @returns {boolean}
+ */
+function usesBackgroundServiceWorker() {
+    const {manifest_version: manifestVersion, background} = chrome.runtime.getManifest();
+    return (
+        manifestVersion === 3 &&
+        typeof background === 'object' &&
+        background !== null &&
+        'service_worker' in background &&
+        typeof background.service_worker === 'string'
+    );
+}
+
+/**
+ * Safari MV2 uses a persistent background page and can communicate with it using
+ * runtime messaging. The SharedWorker bridge is a Firefox background-page
+ * workaround and must not be required for Safari.
+ * @returns {boolean}
+ */
+function isSafariManifestV2() {
+    const {manifest_version: manifestVersion} = chrome.runtime.getManifest();
+    let extensionProtocol = '';
     try {
-        await webExtension.sendMessagePromise({action: 'requestBackendReadySignal'});
-        await promise;
-    } finally {
-        chrome.runtime.onMessage.removeListener(onMessage);
+        extensionProtocol = new URL(import.meta.url).protocol;
+    } catch {
+        // NOP
     }
+    return manifestVersion === 2 && extensionProtocol === 'safari-web-extension:';
 }
 
 /**
@@ -207,15 +214,14 @@ export class Application extends EventDispatcher {
      * @param {(application: Application) => (Promise<void>)} mainFunction
      */
     static async main(waitForDom, mainFunction) {
-        const supportsServiceWorker = 'serviceWorker' in navigator; // Basically, all browsers except Firefox. But it's possible Firefox will support it in the future, so we check in this fashion to be future-proof.
+        const backgroundUsesServiceWorker = usesBackgroundServiceWorker();
+        const safariManifestV2 = isSafariManifestV2();
         const inExtensionContext = window.location.protocol === new URL(import.meta.url).protocol; // This code runs both in content script as well as in the iframe, so we need to differentiate the situation
         /** @type {MessagePort | null} */
-        // If this is Firefox, we don't have a service worker and can't postMessage,
-        // so we temporarily create a SharedWorker in order to establish a MessageChannel
-        // which we can use to postMessage with the backend.
-        // This can only be done in the extension context (aka iframe within popup),
-        // not in the content script context.
-        const backendPort = !supportsServiceWorker && inExtensionContext ?
+        // Firefox background pages use a SharedWorker bridge to transfer a MessagePort
+        // to the backend. Safari MV2 has a persistent background page, so keep its
+        // startup independent of SharedWorker and use runtime messaging for normal RPCs.
+        const backendPort = !backgroundUsesServiceWorker && !safariManifestV2 && inExtensionContext ?
             (() => {
                 const sharedWorkerBridge = new SharedWorker(new URL('comm/shared-worker-bridge.js', import.meta.url), {type: 'module'});
                 const backendChannel = new MessageChannel();
@@ -228,26 +234,20 @@ export class Application extends EventDispatcher {
         const webExtension = new WebExtension();
         log.configure(webExtension.extensionName);
 
-        const mediaDrawingWorkerToBackendChannel = new MessageChannel();
-        const mediaDrawingWorker = inExtensionContext ? new Worker(new URL('display/media-drawing-worker.js', import.meta.url), {type: 'module'}) : null;
-        mediaDrawingWorker?.postMessage({action: 'connectToDatabaseWorker'}, [mediaDrawingWorkerToBackendChannel.port2]);
-
-        const api = new API(webExtension, mediaDrawingWorker, backendPort);
-        if (isSafariPopupIframeContext()) {
-            console.warn('[Application.main] Safari popup iframe: using non-blocking backend ready wait');
-            try {
-                await Promise.race([
-                    waitForBackendReady(webExtension),
-                    delay(1500)
-                ]);
-            } catch (e) {
-                console.warn('[Application.main] Safari popup iframe: backend ready wait failed/ignored', e);
-            }
-        } else {
-            await waitForBackendReady(webExtension);
+        // The media drawing worker requires a transferable MessagePort to the backend.
+        // Safari MV2 intentionally has no SharedWorker bridge, so disable this optional
+        // acceleration there rather than failing the entire application startup.
+        const canConnectMediaDrawingWorker = backgroundUsesServiceWorker || backendPort !== null;
+        const mediaDrawingWorkerToBackendChannel = canConnectMediaDrawingWorker ? new MessageChannel() : null;
+        const mediaDrawingWorker = inExtensionContext && canConnectMediaDrawingWorker ? new Worker(new URL('display/media-drawing-worker.js', import.meta.url), {type: 'module'}) : null;
+        if (mediaDrawingWorker !== null && mediaDrawingWorkerToBackendChannel !== null) {
+            mediaDrawingWorker.postMessage({action: 'connectToDatabaseWorker'}, [mediaDrawingWorkerToBackendChannel.port2]);
         }
 
-        if (mediaDrawingWorker !== null) {
+        const api = new API(webExtension, mediaDrawingWorker, backendPort);
+        await waitForBackendReady(webExtension);
+
+        if (mediaDrawingWorker !== null && mediaDrawingWorkerToBackendChannel !== null) {
             api.connectToDatabaseWorker(mediaDrawingWorkerToBackendChannel.port1);
         }
         setInterval(() => {

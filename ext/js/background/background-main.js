@@ -29,4 +29,6 @@ async function main() {
     await backend.prepare();
 }
 
-void main();
+void main().catch((error) => {
+    console.error('[Yomitan] Background startup failed', error);
+});
