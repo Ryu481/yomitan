@@ -50,6 +50,10 @@ export class RequestBuilder {
      * @returns {Promise<Response>} The response of the `fetch` call.
      */
     async fetchAnonymous(url, init) {
+        if (typeof chrome.declarativeNetRequest === 'undefined') {
+            return await fetch(url, init);
+        }
+
         const id = this._getNewRuleId();
         const originUrl = this._getOriginURL(url);
         url = encodeURI(decodeURIComponent(url));
@@ -169,6 +173,7 @@ export class RequestBuilder {
 
     /** */
     async _clearSessionRules() {
+        if (typeof chrome.declarativeNetRequest === 'undefined') { return; }
         const rules = await this._getSessionRules();
 
         if (rules.length === 0) { return; }
@@ -229,6 +234,7 @@ export class RequestBuilder {
 
     /** */
     async _clearDynamicRules() {
+        if (typeof chrome.declarativeNetRequest === 'undefined') { return; }
         const rules = await this._getDynamicRules();
 
         if (rules.length === 0) { return; }

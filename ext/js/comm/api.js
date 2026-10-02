@@ -19,6 +19,21 @@
 import {ExtensionError} from '../core/extension-error.js';
 import {log} from '../core/log.js';
 
+/**
+ * Returns whether this extension build actually uses an MV3 background service worker.
+ * @returns {boolean}
+ */
+function usesBackgroundServiceWorker() {
+    const {manifest_version: manifestVersion, background} = chrome.runtime.getManifest();
+    return (
+        manifestVersion === 3 &&
+        typeof background === 'object' &&
+        background !== null &&
+        'service_worker' in background &&
+        typeof background.service_worker === 'string'
+    );
+}
+
 export class API {
     /**
      * @param {import('../extension/web-extension.js').WebExtension} webExtension
@@ -435,6 +450,14 @@ export class API {
         return this._invoke('forceSync', void 0);
     }
 
+    /**
+     * @param {string} url
+     * @returns {Promise<{data: string, contentType: string}|null>}
+     */
+    fetchLocalAudioData(url) {
+        return this._invoke('fetchLocalAudioData', {url});
+    }
+
     // Utilities
 
     /**
@@ -478,9 +501,10 @@ export class API {
      * @param {Transferable[]} transferables
      */
     _pmInvoke(action, params, transferables) {
-        // on firefox, there is no service worker, so we instead use a MessageChannel which is established
-        // via a handshake via a SharedWorker
-        if (!('serviceWorker' in navigator)) {
+        // Background pages (including Firefox MV3 and Safari MV2) use a MessageChannel
+        // established via a SharedWorker. Only builds whose manifest actually declares
+        // a background service worker use navigator.serviceWorker for this transport.
+        if (!usesBackgroundServiceWorker()) {
             if (this._backendPort === null) {
                 log.error('no backend port available');
                 return;

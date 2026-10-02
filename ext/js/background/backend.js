@@ -189,6 +189,7 @@ export class Backend {
             ['getLanguageSummaries',         this._onApiGetLanguageSummaries.bind(this)],
             ['heartbeat',                    this._onApiHeartbeat.bind(this)],
             ['forceSync',                    this._onApiForceSync.bind(this)],
+            ['fetchLocalAudioData',          this._onApiFetchLocalAudioData.bind(this)],
         ]);
 
         /** @type {import('api').PmApiMap} */
@@ -307,8 +308,12 @@ export class Backend {
             }
             this._clipboardReader.browser = this._environment.getInfo().browser;
 
-            // if this is Firefox and therefore not running in Service Worker, we need to use a SharedWorker to setup a MessageChannel to postMessage with the popup
-            if (self.constructor.name === 'Window') {
+            // Firefox background pages use a SharedWorker to establish a transferable
+            // MessagePort. Safari MV2 has a persistent background page and does not need
+            // this bridge; keeping Safari startup independent of SharedWorker also avoids
+            // a worker failure aborting the complete backend initialization.
+            const isSafariExtensionPage = self.constructor.name === 'Window' && self.location.protocol === 'safari-web-extension:';
+            if (self.constructor.name === 'Window' && !isSafariExtensionPage) {
                 const sharedWorkerBridge = new SharedWorker(new URL('../comm/shared-worker-bridge.js', import.meta.url), {type: 'module'});
                 sharedWorkerBridge.port.postMessage({action: 'registerBackendPort'});
                 sharedWorkerBridge.port.addEventListener('message', (/** @type {MessageEvent} */ e) => {
@@ -341,8 +346,6 @@ export class Backend {
 
             this._clipboardMonitor.on('change', this._onClipboardTextChange.bind(this));
 
-            this._sendMessageAllTabsIgnoreResponse({action: 'applicationBackendReady'});
-            this._sendMessageIgnoreResponse({action: 'applicationBackendReady'});
         } catch (e) {
             log.error(e);
             throw e;
@@ -514,20 +517,10 @@ export class Backend {
     }
 
     /** @type {import('api').ApiHandler<'requestBackendReadySignal'>} */
-    _onApiRequestBackendReadySignal(_params, sender) {
-        // Tab ID isn't set in background (e.g. browser_action)
-        /** @type {import('application').ApiMessage<'applicationBackendReady'>} */
-        const data = {action: 'applicationBackendReady'};
-        if (typeof sender.tab === 'undefined') {
-            this._sendMessageIgnoreResponse(data);
-            return false;
-        } else {
-            const {id} = sender.tab;
-            if (typeof id === 'number') {
-                this._sendMessageTabIgnoreResponse(id, data, {});
-            }
-            return true;
-        }
+    _onApiRequestBackendReadySignal() {
+        // Reaching this handler means _onMessageWrapper has already waited for
+        // backend preparation to complete. The direct response is the ready signal.
+        return true;
     }
 
     /** @type {import('api').ApiHandler<'optionsGet'>} */
@@ -1165,6 +1158,29 @@ export class Backend {
             throw e;
         }
         return void 0;
+    }
+
+    /** @type {import('api').ApiHandler<'fetchLocalAudioData'>} */
+    async _onApiFetchLocalAudioData({url}) {
+        const response = await fetch(url);
+        if (!response.ok) {
+            log.error(`Local server responded with HTTP status code ${response.status}`);
+            return null;
+        }
+
+        const contentType = response.headers.get('content-type') || 'audio/mpeg';
+        const arrayBuffer = await response.arrayBuffer();
+
+        let binary = '';
+        const bytes = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+
+        return {
+            data: btoa(binary),
+            contentType: contentType,
+        };
     }
 
     // Command handlers
@@ -1951,8 +1967,8 @@ export class Backend {
      * @returns {string}
      */
     _getBrowserIconTitle() {
-        const manifest = /** @type {chrome.runtime.ManifestV3} */ (chrome.runtime.getManifest());
-        const action = manifest.action;
+        const manifest = /** @type {chrome.runtime.ManifestV2 & chrome.runtime.ManifestV3} */ (chrome.runtime.getManifest());
+        const action = manifest.action ?? manifest.browser_action;
         if (typeof action === 'undefined') { throw new Error('Failed to find action'); }
         const defaultTitle = action.default_title;
         if (typeof defaultTitle === 'undefined') { throw new Error('Failed to find default_title'); }
@@ -1965,7 +1981,8 @@ export class Backend {
      */
     _updateBadge() {
         let title = this._defaultBrowserActionTitle;
-        if (title === null || !isObjectNotArray(chrome.action)) {
+        const action = isObjectNotArray(chrome.action) ? chrome.action : chrome.browserAction;
+        if (title === null || !isObjectNotArray(action)) {
             // Not ready or invalid
             return;
         }
@@ -2014,17 +2031,17 @@ export class Backend {
             }
         }
 
-        if (color !== null && typeof chrome.action.setBadgeBackgroundColor === 'function') {
-            void chrome.action.setBadgeBackgroundColor({color});
+        if (color !== null && typeof action.setBadgeBackgroundColor === 'function') {
+            void action.setBadgeBackgroundColor({color});
         }
-        if (text !== null && typeof chrome.action.setBadgeText === 'function') {
-            void chrome.action.setBadgeText({text});
+        if (text !== null && typeof action.setBadgeText === 'function') {
+            void action.setBadgeText({text});
         }
-        if (typeof chrome.action.setTitle === 'function') {
+        if (typeof action.setTitle === 'function') {
             if (status !== null) {
                 title = `${title} - ${status}`;
             }
-            void chrome.action.setTitle({title});
+            void action.setTitle({title});
         }
     }
 

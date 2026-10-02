@@ -28,30 +28,53 @@
  * @returns {Promise<void>}
  */
 export function injectStylesheet(type, content, tabId, frameId, allFrames) {
-    return new Promise((resolve, reject) => {
-        /** @type {chrome.scripting.InjectionTarget} */
-        const target = {
-            tabId,
-            allFrames,
-        };
-        /** @type {chrome.scripting.CSSInjection} */
-        const details = (
-            type === 'file' ?
-            {origin: 'AUTHOR', files: [content], target} :
-            {origin: 'USER', css: content, target}
-        );
-        if (!allFrames && typeof frameId === 'number') {
-            details.target.frameIds = [frameId];
-        }
-        chrome.scripting.insertCSS(details, () => {
-            const e = chrome.runtime.lastError;
-            if (e) {
-                reject(new Error(e.message));
-            } else {
-                resolve();
+    if (typeof chrome.scripting?.insertCSS === 'function') {
+        return new Promise((resolve, reject) => {
+            /** @type {chrome.scripting.InjectionTarget} */
+            const target = {
+                tabId,
+                allFrames,
+            };
+            /** @type {chrome.scripting.CSSInjection} */
+            const details = (
+                type === 'file' ?
+                {origin: 'AUTHOR', files: [content], target} :
+                {origin: 'USER', css: content, target}
+            );
+            if (!allFrames && typeof frameId === 'number') {
+                details.target.frameIds = [frameId];
             }
+            chrome.scripting.insertCSS(details, () => {
+                const e = chrome.runtime.lastError;
+                if (e) {
+                    reject(new Error(e.message));
+                } else {
+                    resolve();
+                }
+            });
         });
-    });
+    }
+
+    if (typeof chrome.tabs?.insertCSS === 'function') {
+        return new Promise((resolve, reject) => {
+            const details = type === 'file' ? {file: content} : {code: content};
+            details.allFrames = allFrames;
+            details.cssOrigin = type === 'file' ? 'author' : 'user';
+            if (!allFrames && typeof frameId === 'number') {
+                details.frameId = frameId;
+            }
+            chrome.tabs.insertCSS(tabId, details, () => {
+                const e = chrome.runtime.lastError;
+                if (e) {
+                    reject(new Error(e.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    return Promise.reject(new Error('Stylesheet injection is not supported'));
 }
 
 /**
@@ -60,6 +83,9 @@ export function injectStylesheet(type, content, tabId, frameId, allFrames) {
  * @returns {Promise<boolean>} `true` if a script is registered, `false` otherwise.
  */
 export async function isContentScriptRegistered(id) {
+    if (typeof chrome.scripting?.getRegisteredContentScripts !== 'function') {
+        return false;
+    }
     const scripts = await getRegisteredContentScripts([id]);
     for (const script of scripts) {
         if (script.id === id) {
@@ -79,6 +105,9 @@ export async function isContentScriptRegistered(id) {
  * @throws An error is thrown if the id is already in use.
  */
 export async function registerContentScript(id, details) {
+    if (typeof chrome.scripting?.registerContentScripts !== 'function') {
+        throw new Error('Dynamic content script registration is not supported');
+    }
     if (await isContentScriptRegistered(id)) {
         throw new Error('Registration already exists');
     }
@@ -102,6 +131,9 @@ export async function registerContentScript(id, details) {
  * @returns {Promise<void>}
  */
 export async function unregisterContentScript(id) {
+    if (typeof chrome.scripting?.unregisterContentScripts !== 'function') {
+        return;
+    }
     return new Promise((resolve, reject) => {
         chrome.scripting.unregisterContentScripts({ids: [id]}, () => {
             const e = chrome.runtime.lastError;

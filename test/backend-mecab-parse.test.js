@@ -93,6 +93,7 @@ describe('Backend._textParseScanning', () => {
         const dictionaryEntries = [{
             headwords: [{term: '来る', reading: 'くる', sources: [source], headwordIndex: 0}],
             frequencies: [],
+            pronunciations: [],
         }];
         const context = {
             _getProfileOptions: () => ({}),
@@ -111,7 +112,7 @@ describe('Backend._textParseScanning', () => {
             {
                 text: '来',
                 reading: 'き',
-                headwords: [[{term: '来る', reading: 'くる', sources: [source], frequencies: []}]],
+                headwords: [[{term: '来る', reading: 'くる', sources: [source], frequencies: [], pronunciations: []}]],
             },
             {text: 'て', reading: ''},
         ]]);

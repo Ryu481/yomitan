@@ -158,7 +158,7 @@ export class LanguageTransformer {
      */
     getInflectedText(text, trace) {
         let usedAlternativeRule = false;
-        for (const {transform: transformId, ruleIndex} of trace) {
+        for (const {transform: transformId, ruleIndex, text: sourceText} of trace) {
             const transform = this._transforms.find(({id}) => id === transformId);
             if (typeof transform === 'undefined') { return null; }
 
@@ -168,7 +168,7 @@ export class LanguageTransformer {
             if (typeof transform.readingTransform === 'string') {
                 const readingTransform = this._transforms.find(({id}) => id === transform.readingTransform);
                 if (typeof readingTransform === 'undefined') { return null; }
-                const candidates = this._getInflectionCandidates(text, tracedRule, readingTransform.rules);
+                const candidates = this._getInflectionCandidates(text, tracedRule, readingTransform.rules, sourceText);
                 if (candidates.size > 1) { return null; }
                 if (candidates.size === 1) {
                     [text] = candidates;
@@ -179,7 +179,7 @@ export class LanguageTransformer {
 
             let inflectedText = tracedRule.inflect(text);
             if (inflectedText === null) {
-                const candidates = this._getInflectionCandidates(text, tracedRule, transform.rules);
+                const candidates = this._getInflectionCandidates(text, tracedRule, transform.rules, sourceText);
                 if (candidates.size !== 1) { return null; }
                 [inflectedText] = candidates;
                 usedAlternativeRule = true;
@@ -194,9 +194,10 @@ export class LanguageTransformer {
      * @param {string} text
      * @param {import('language-transformer-internal').Rule} tracedRule
      * @param {import('language-transformer-internal').Rule[]} rules
+     * @param {string} sourceText
      * @returns {Set<string>}
      */
-    _getInflectionCandidates(text, tracedRule, rules) {
+    _getInflectionCandidates(text, tracedRule, rules, sourceText) {
         /** @type {Set<string>} */
         const candidates = new Set();
         for (const rule of rules) {
@@ -210,6 +211,28 @@ export class LanguageTransformer {
             }
             const candidate = rule.inflect(text);
             if (candidate !== null) { candidates.add(candidate); }
+        }
+        if (candidates.size > 1 && tracedRule.type === 'suffix') {
+            // Preserve the traced spelling when modern and historical kana rules
+            // reconstruct different readings, such as 来そう and 来さう.
+            let longestSuffixLength = 0;
+            const matchingCandidates = new Set();
+            for (const candidate of candidates) {
+                let suffixLength = 0;
+                while (
+                    suffixLength < candidate.length &&
+                    suffixLength < sourceText.length &&
+                    candidate[candidate.length - suffixLength - 1] === sourceText[sourceText.length - suffixLength - 1]
+                ) {
+                    ++suffixLength;
+                }
+                if (suffixLength > longestSuffixLength) {
+                    matchingCandidates.clear();
+                    longestSuffixLength = suffixLength;
+                }
+                if (suffixLength === longestSuffixLength) { matchingCandidates.add(candidate); }
+            }
+            if (longestSuffixLength > 0) { return matchingCandidates; }
         }
         return candidates;
     }

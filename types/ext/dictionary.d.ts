@@ -527,7 +527,7 @@ export type TermSource = {
      */
     transformedText: string;
     /**
-     * The reading of {@link transformedText} when it cannot be derived from the
+     * The reading of `transformedText` when it cannot be derived from the
      * dictionary-form reading using regular furigana distribution.
      */
     transformedReading?: string;
