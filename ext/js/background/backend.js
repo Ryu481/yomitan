@@ -1101,12 +1101,16 @@ export class Backend {
         /** @type {import('cross-frame-api').CrossFrameCommunicationPortDetails} */
         const sourceDetails = {
             name: 'cross-frame-communication-port',
+            receiverTabId: sourceTabId,
+            receiverFrameId: sourceFrameId,
             otherTabId: targetTabId,
             otherFrameId: targetFrameId,
         };
         /** @type {import('cross-frame-api').CrossFrameCommunicationPortDetails} */
         const targetDetails = {
             name: 'cross-frame-communication-port',
+            receiverTabId: targetTabId,
+            receiverFrameId: targetFrameId,
             otherTabId: sourceTabId,
             otherFrameId: sourceFrameId,
         };
