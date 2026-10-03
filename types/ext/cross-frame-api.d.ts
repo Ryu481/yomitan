@@ -76,6 +76,8 @@ export type PortDetails = CrossFrameCommunicationPortDetails;
 
 export type CrossFrameCommunicationPortDetails = {
     name: 'cross-frame-communication-port';
+    receiverTabId: number;
+    receiverFrameId: number;
     otherTabId: number;
     otherFrameId: number;
 };
