@@ -5456,5 +5456,56 @@
         "pitch-accent-categories": ""
       }
     ]
+  },
+  {
+    "name": "Irregular kuru reading",
+    "results": [
+      {
+        "audio": "",
+        "clipboard-image": "",
+        "clipboard-text": "",
+        "cloze-body": "来て",
+        "cloze-prefix": "cloze-prefix",
+        "cloze-suffix": "cloze-suffix",
+        "conjugation": "-て",
+        "dictionary": "Test Dictionary 2",
+        "dictionary-alias": "termsDictAlias",
+        "document-title": "title",
+        "expression": "来る",
+        "frequencies": "",
+        "frequency-harmonic-rank": "9999999",
+        "frequency-harmonic-occurrence": "0",
+        "frequency-average-rank": "9999999",
+        "frequency-average-occurrence": "0",
+        "furigana": "<ruby>来<rt>く</rt></ruby>る",
+        "furigana-plain": "来[く]る",
+        "glossary": "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><i>(vk, termsDictAlias)</i> kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "glossary-brief": "<div style=\"text-align: left;\" class=\"yomitan-glossary\">kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "glossary-no-dictionary": "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><i>(vk)</i> kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "glossary-plain": "(termsDictAlias)<br>kuru definition",
+        "glossary-plain-no-dictionary": "kuru definition",
+        "glossary-first": "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><i>(vk, termsDictAlias)</i> kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "glossary-first-brief": "<div style=\"text-align: left;\" class=\"yomitan-glossary\">kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "glossary-first-no-dictionary": "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><i>(vk)</i> kuru definition<style>.yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}</style></div>",
+        "part-of-speech": "Kuru verb",
+        "phonetic-transcriptions": "",
+        "reading": "くる",
+        "screenshot": "",
+        "search-query": "fullQuery",
+        "popup-selection-text": "",
+        "sentence": "cloze-prefix来てcloze-suffix",
+        "sentence-furigana": "cloze-prefix来てcloze-suffix",
+        "sentence-furigana-plain": "cloze-prefix来てcloze-suffix",
+        "tags": "vk",
+        "url": "<a href=\"url:\">url:</a>",
+        "url-plain": "url:",
+        "cloze-body-kana": "きて",
+        "pitch-accents": "",
+        "pitch-accent-graphs": "",
+        "pitch-accent-graphs-jj": "",
+        "pitch-accent-positions": "",
+        "pitch-accent-categories": ""
+      }
+    ]
   }
 ]

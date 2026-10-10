@@ -558,6 +558,13 @@
                     "removeNonJapaneseCharacters": false
                 }
             ]
+        },
+        {
+            "name": "Irregular kuru reading",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "来て",
+            "options": "default"
         }
     ]
 }

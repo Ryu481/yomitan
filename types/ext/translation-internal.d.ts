@@ -19,6 +19,7 @@ import type * as DictionaryDatabase from './dictionary-database';
 import type * as Dictionary from './dictionary';
 import type * as Translation from './translation';
 import type * as Language from './language';
+import type * as LanguageTransformer from './language-transformer-internal';
 
 export type TextDeinflectionOptions = [
     textReplacements: Translation.FindTermsTextReplacement[] | null,
@@ -59,6 +60,7 @@ export type DatabaseDeinflection = {
     transformedText: string;
     deinflectedText: string;
     conditions: number;
+    trace: LanguageTransformer.Trace;
     textProcessorRuleChainCandidates: TextProcessorRuleChainCandidate[];
     inflectionRuleChainCandidates: InflectionRuleChainCandidate[];
     databaseEntries: DictionaryDatabase.TermEntry[];

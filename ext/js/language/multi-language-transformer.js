@@ -77,6 +77,17 @@ export class MultiLanguageTransformer {
 
     /**
      * @param {string} language
+     * @param {string} text
+     * @param {import('language-transformer-internal').Trace} trace
+     * @returns {import('language-transformer-internal').InflectedText|null}
+     */
+    getInflectedText(language, text, trace) {
+        const languageTransformer = this._languageTransformers.get(language);
+        return typeof languageTransformer !== 'undefined' ? languageTransformer.getInflectedText(text, trace) : null;
+    }
+
+    /**
+     * @param {string} language
      * @param {string[]} inflectionRules
      * @returns {import('dictionary').InflectionRuleChain}
      */

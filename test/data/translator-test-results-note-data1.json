@@ -42924,5 +42924,136 @@
         "media": {}
       }
     ]
+  },
+  {
+    "name": "Irregular kuru reading",
+    "noteDataList": [
+      {
+        "marker": "{marker}",
+        "definition": {
+          "type": "term",
+          "id": 38,
+          "source": "来て",
+          "rawSource": "来て",
+          "sourceTerm": "来る",
+          "inflectionRuleChainCandidates": [
+            {
+              "source": "algorithm",
+              "inflectionRules": [
+                {
+                  "name": "-て",
+                  "description": "て-form.\nIt has a myriad of meanings. Primarily, it is a conjunctive particle that connects two clauses together.\nUsage: Attach て to the continuative form (連用形) of verbs after euphonic change form, くて to the stem of i-adjectives."
+                }
+              ]
+            }
+          ],
+          "score": 1,
+          "isPrimary": true,
+          "sequence": 30,
+          "dictionary": "Test Dictionary 2",
+          "dictionaryAlias": "termsDictAlias",
+          "dictionaryOrder": {
+            "index": 0
+          },
+          "dictionaryNames": [
+            "Test Dictionary 2"
+          ],
+          "expression": "来る",
+          "reading": "くる",
+          "expressions": [
+            {
+              "sourceTerm": "来る",
+              "expression": "来る",
+              "reading": "くる",
+              "termTags": [],
+              "frequencies": [],
+              "pitches": [],
+              "furiganaSegments": [
+                {
+                  "text": "来",
+                  "furigana": "く"
+                },
+                {
+                  "text": "る",
+                  "furigana": ""
+                }
+              ],
+              "termFrequency": "normal",
+              "wordClasses": [
+                "vk"
+              ]
+            }
+          ],
+          "glossary": [
+            "kuru definition"
+          ],
+          "glossaryScopedStyles": ".yomitan-glossary {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}",
+          "dictScopedStyles": ".yomitan-glossary {[data-dictionary=\"Test Dictionary 2\"] {ul[data-sc-content='glossary'] {\n    color: #ffff00;\n}\n}\n}",
+          "definitionTags": [
+            {
+              "name": "vk",
+              "category": "default",
+              "notes": "",
+              "order": 0,
+              "score": 0,
+              "dictionary": "Test Dictionary 2",
+              "redundant": false
+            }
+          ],
+          "termTags": [],
+          "frequencies": [],
+          "frequencyNumbers": [],
+          "frequencyHarmonic": -1,
+          "frequencyHarmonicRank": -1,
+          "frequencyHarmonicOccurrence": -1,
+          "frequencyAverage": -1,
+          "frequencyAverageRank": -1,
+          "frequencyAverageOccurrence": -1,
+          "pitches": [],
+          "phoneticTranscriptions": [],
+          "sourceTermExactMatchCount": 1,
+          "url": "url:",
+          "cloze": {
+            "sentence": "",
+            "prefix": "",
+            "body": "",
+            "bodyKana": "",
+            "suffix": ""
+          },
+          "furiganaSegments": [
+            {
+              "text": "来",
+              "furigana": "く"
+            },
+            {
+              "text": "る",
+              "furigana": ""
+            }
+          ]
+        },
+        "glossaryLayoutMode": "default",
+        "compactTags": false,
+        "group": false,
+        "merge": false,
+        "compactGlossaries": false,
+        "uniqueExpressions": [
+          "来る"
+        ],
+        "uniqueReadings": [
+          "くる"
+        ],
+        "pitches": [],
+        "pitchCount": 0,
+        "phoneticTranscriptions": [],
+        "context": {
+          "query": "query",
+          "fullQuery": "fullQuery",
+          "document": {
+            "title": "title"
+          }
+        },
+        "media": {}
+      }
+    ]
   }
 ]

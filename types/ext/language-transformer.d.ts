@@ -49,6 +49,8 @@ export type Transform<TCondition> = {
     name: string;
     description?: string;
     i18n?: TransformI18n[];
+    /** ID of an equivalent transform whose inflected forms use reading characters. */
+    readingTransform?: string;
     rules: Rule<TCondition>[];
 };
 
@@ -60,10 +62,13 @@ export type TransformI18n = {
 
 export type DeinflectFunction = (inflectedWord: string) => string;
 
+export type InflectFunction = (deinflectedWord: string) => string | null;
+
 export type Rule<TCondition = string> = {
     type: 'suffix' | 'prefix' | 'wholeWord' | 'other';
     isInflected: RegExp; // If evaluates true, will try to deinflect
     deinflect: DeinflectFunction;
+    inflect?: InflectFunction;
     conditionsIn: TCondition[];
     conditionsOut: TCondition[];
 };
@@ -73,6 +78,7 @@ export type SuffixRule<TCondition = string> = {
     isInflected: RegExp;
     deinflected: string;
     deinflect: DeinflectFunction;
+    inflect?: InflectFunction;
     conditionsIn: TCondition[];
     conditionsOut: TCondition[];
 };
