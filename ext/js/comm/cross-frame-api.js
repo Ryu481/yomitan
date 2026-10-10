@@ -48,8 +48,12 @@ export class CrossFrameAPIPort extends EventDispatcher {
         this._activeInvocations = new Map();
         /** @type {number} */
         this._invocationId = 0;
+        /** @type {[number, number][]} */
+        this._receivedInvocationRanges = [];
         /** @type {EventListenerCollection} */
         this._eventListeners = new EventListenerCollection();
+        /** @type {boolean} */
+        this._isPrepared = false;
     }
 
     /** @type {number} */
@@ -77,6 +81,8 @@ export class CrossFrameAPIPort extends EventDispatcher {
      */
     prepare() {
         if (this._port === null) { throw new Error('Invalid state'); }
+        if (this._isPrepared) { return; }
+        this._isPrepared = true;
         this._eventListeners.addListener(this._port.onDisconnect, this._onDisconnect.bind(this));
         this._eventListeners.addListener(this._port.onMessage, this._onMessage.bind(this));
         this._eventListeners.addEventListener(window, 'pageshow', this._onPageShow.bind(this));
@@ -192,12 +198,16 @@ export class CrossFrameAPIPort extends EventDispatcher {
     _onAck(id) {
         const invocation = this._activeInvocations.get(id);
         if (typeof invocation === 'undefined') {
+            // Responses can be delivered again after completion or a timeout.
+            // Only warn for IDs which this port has never issued.
+            if (Number.isInteger(id) && id >= 0 && id < this._invocationId) { return; }
             log.warn(new Error(`Request ${id} not found for acknowledgement`));
             return;
         }
 
         if (invocation.ack) {
-            this._onError(id, `Request ${id} already acknowledged`);
+            // A duplicate ACK must neither reject the request nor extend its
+            // response timeout. Keep waiting for the original result.
             return;
         }
 
@@ -225,6 +235,7 @@ export class CrossFrameAPIPort extends EventDispatcher {
     _onResult(id, data) {
         const invocation = this._activeInvocations.get(id);
         if (typeof invocation === 'undefined') {
+            if (Number.isInteger(id) && id >= 0 && id < this._invocationId) { return; }
             log.warn(new Error(`Request ${id} not found`));
             return;
         }
@@ -274,6 +285,9 @@ export class CrossFrameAPIPort extends EventDispatcher {
      * @param {import('cross-frame-api').ApiMessageAny} details
      */
     _onInvoke(id, {action, params}) {
+        // A runtime can redeliver queued invokes while opening the connection.
+        // Record receipt before calling the handler to avoid repeating effects.
+        if (!this._markInvocationReceived(id)) { return; }
         this._sendAck(id);
         invokeApiMapHandler(
             this._apiMap,
@@ -283,6 +297,36 @@ export class CrossFrameAPIPort extends EventDispatcher {
             (data) => this._sendResult(id, data),
             () => this._sendError(id, new Error(`Unknown action: ${action}`)),
         );
+    }
+
+    /**
+     * @param {number} id
+     * @returns {boolean} Whether this is the first receipt of the invocation.
+     */
+    _markInvocationReceived(id) {
+        if (!Number.isSafeInteger(id) || id < 0) { return false; }
+        // Consecutive IDs share one range, so normal traffic does not grow a
+        // set per request. Keep gaps: queued IDs can first arrive out of order.
+        const ranges = this._receivedInvocationRanges;
+        for (let i = 0; i < ranges.length; ++i) {
+            const range = ranges[i];
+            if (id < range[0] - 1) {
+                ranges.splice(i, 0, [id, id]);
+                return true;
+            }
+            if (id > range[1] + 1) { continue; }
+            if (id >= range[0] && id <= range[1]) { return false; }
+            range[0] = Math.min(range[0], id);
+            range[1] = Math.max(range[1], id);
+            const nextRange = ranges[i + 1];
+            if (typeof nextRange !== 'undefined' && range[1] + 1 === nextRange[0]) {
+                range[1] = nextRange[1];
+                ranges.splice(i + 1, 1);
+            }
+            return true;
+        }
+        ranges.push([id, id]);
+        return true;
     }
 
     /**
@@ -336,6 +380,8 @@ export class CrossFrameAPI {
         this._responseTimeout = 10000; // 10 seconds
         /** @type {Map<number, Map<number, CrossFrameAPIPort>>} */
         this._commPorts = new Map();
+        /** @type {Map<string, Promise<CrossFrameAPIPort>>} */
+        this._commPortCreationPromises = new Map();
         /** @type {import('cross-frame-api').ApiMap} */
         this._apiMap = new Map();
         /** @type {(port: CrossFrameAPIPort) => void} */
@@ -409,13 +455,18 @@ export class CrossFrameAPI {
         const commPort = await this._getOrCreateCommPort(targetTabId, targetFrameId);
         return await commPort.invoke(action, params, this._ackTimeout, this._responseTimeout);
     }
-    
+
+    /**
+     * @param {string} action
+     * @param {unknown} params
+     * @returns {Promise<import('cross-frame-api').ApiReturnAny>}
+     */
     invokeLocal(action, params) {
         return new Promise((resolve, reject) => {
             invokeApiMapHandler(
                 this._apiMap,
                 action,
-                params,
+                /** @type {import('api-map').ApiParamsAny<import('cross-frame-api').ApiSurface>} */ (params),
                 [],
                 (response) => {
                     if (typeof response.error !== 'undefined') {
@@ -424,7 +475,7 @@ export class CrossFrameAPI {
                         resolve(response.result);
                     }
                 },
-                () => reject(new Error(`Unknown action: ${action}`))
+                () => reject(new Error(`Unknown action: ${action}`)),
             );
         });
     }
@@ -451,6 +502,10 @@ export class CrossFrameAPI {
                 return;
             }
             if (details.name !== 'cross-frame-communication-port') { return; }
+            // Some runtimes can notify multiple pages of the same connection.
+            // Only the intended tab/frame may handle it. Do not disconnect an
+            // unrelated endpoint: the intended receiver can share its channel.
+            if (details.receiverTabId !== this._tabId || details.receiverFrameId !== this._frameId) { return; }
 
             const otherTabId = details.otherTabId;
             const otherFrameId = details.otherFrameId;
@@ -495,7 +550,21 @@ export class CrossFrameAPI {
                 return commPort;
             }
         }
-        return await this._createCommPort(otherTabId, otherFrameId);
+        // Share an in-flight opening so concurrent popup/ancestry requests do
+        // not create competing bridges for the same frame.
+        const key = `${otherTabId}:${otherFrameId}`;
+        let promise = this._commPortCreationPromises.get(key);
+        if (typeof promise === 'undefined') {
+            promise = this._createCommPort(otherTabId, otherFrameId);
+            this._commPortCreationPromises.set(key, promise);
+        }
+        try {
+            return await promise;
+        } finally {
+            if (this._commPortCreationPromises.get(key) === promise) {
+                this._commPortCreationPromises.delete(key);
+            }
+        }
     }
 
     /**
